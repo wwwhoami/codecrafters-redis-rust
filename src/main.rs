@@ -1,37 +1,36 @@
-use std::{
-    io::{Read, Write},
+use tokio::{
+    io::{self, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 
-fn main() {
-    println!("Logs from your program will appear here!");
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    println!("Server is listening...");
 
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    loop {
+        let (socket, _) = listener.accept().await?;
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!("accepted new connection");
-                handle(stream);
-            }
-            Err(e) => {
-                eprintln!("TCP Listener failed: {}", e);
-            }
-        }
+        tokio::spawn(async move { handle(socket).await });
     }
 }
-fn handle(mut stream: TcpStream) {
+
+async fn handle(mut socket: TcpStream) {
     let mut buf = [0; 512];
-    loop {
-        let bytes_read = stream.read(&mut buf).expect("Failed to read from client");
 
-        if bytes_read == 0 {
-            return;
+    match socket.read(&mut buf).await {
+        Ok(0) => return,
+        Ok(n) => {
+            println!("Got: {:?}", &buf[..n]);
+
+            let out_buf = b"+PONG\r\n";
+            if socket.write_all(out_buf).await.is_err() {
+                eprintln!("Unexpected socket error while writing to buffer")
+            }
+            println!("Responded: {:?}", out_buf);
         }
-
-        let out_buf = b"+PONG\r\n";
-        stream
-            .write_all(out_buf)
-            .expect("Failed to write to the client");
+        Err(e) => {
+            eprintln!("Unexpected socket error: {}", e);
+        }
     }
 }
