@@ -16,14 +16,19 @@ async fn main() -> io::Result<()> {
 }
 
 async fn handle(mut socket: TcpStream) {
+    const PING: &[u8] = b"*1\r\n$4\r\nping\r\n";
     let mut buf = [0; 512];
 
     match socket.read(&mut buf).await {
         Ok(n) => {
             println!("Got: {:?}", &buf[..n]);
 
-            let out_buf = b"+PONG\r\n";
-            if socket.write_all(out_buf).await.is_err() {
+            let out_buf = match &buf[..n] {
+                PING => "+PONG\r\n",
+                _ => "-Error unkown command\r\n",
+            };
+
+            if socket.write_all(out_buf.as_bytes()).await.is_err() {
                 eprintln!("Unexpected socket error while writing to buffer")
             }
             println!("Responded: {:?}", out_buf);
