@@ -10,15 +10,28 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
+            Ok(stream) => {
                 println!("accepted new connection");
-                stream
-                    .write_all(b"+PONG\r\n")
-                    .expect("Failed to write to client");
+                handle(stream);
             }
             Err(e) => {
                 eprintln!("TCP Listener failed: {}", e);
             }
         }
+    }
+}
+fn handle(mut stream: TcpStream) {
+    let mut buf = [0; 512];
+    loop {
+        let bytes_read = stream.read(&mut buf).expect("Failed to read from client");
+
+        if bytes_read == 0 {
+            return;
+        }
+
+        let out_buf = b"+PONG\r\n";
+        stream
+            .write_all(out_buf)
+            .expect("Failed to write to the client");
     }
 }
