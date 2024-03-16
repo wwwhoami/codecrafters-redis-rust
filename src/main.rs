@@ -19,7 +19,6 @@ async fn handle(mut socket: TcpStream) {
     let mut buf = [0; 512];
 
     match socket.read(&mut buf).await {
-        Ok(0) => return,
         Ok(n) => {
             println!("Got: {:?}", &buf[..n]);
 
