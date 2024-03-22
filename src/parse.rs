@@ -1,5 +1,7 @@
 use std::{fmt, str, vec};
 
+use bytes::Bytes;
+
 use crate::frame::Frame;
 
 pub struct Parse {
@@ -34,6 +36,18 @@ impl Parse {
             Frame::Bulk(s) => str::from_utf8(&s)
                 .map(|s| s.to_string())
                 .map_err(|_| "Protocol error: invalid string".into()),
+            frame => Err(format!(
+                "Protocol error: expected simple or bulk string frame, got {:?}",
+                frame
+            )
+            .into()),
+        }
+    }
+
+    pub fn next_bytes(&mut self) -> Result<Bytes, Error> {
+        match self.next_frame()? {
+            Frame::Simple(s) => Ok(s.into_bytes().into()),
+            Frame::Bulk(s) => Ok(s),
             frame => Err(format!(
                 "Protocol error: expected simple or bulk string frame, got {:?}",
                 frame

@@ -1,4 +1,4 @@
-use redis_starter_rust::{Command, Connection, Frame};
+use redis_starter_rust::{Command, Connection, Db, Frame};
 use tokio::{
     io::{self},
     net::{TcpListener, TcpStream},
@@ -7,16 +7,18 @@ use tokio::{
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    let db = Db::new();
     println!("Server is listening...");
 
     loop {
         let (socket, _) = listener.accept().await?;
+        let db = db.clone();
 
-        tokio::spawn(async move { handle(socket).await });
+        tokio::spawn(async move { handle(socket, db).await });
     }
 }
 
-async fn handle(socket: TcpStream) {
+async fn handle(socket: TcpStream, db: Db) {
     let mut connection = Connection::new(socket);
 
     while let Some(frame) = connection.read_frame().await.unwrap() {
@@ -26,6 +28,8 @@ async fn handle(socket: TcpStream) {
             Ok(command) => match command {
                 Command::Echo(echo) => echo.execute(),
                 Command::Ping(ping) => ping.execute(),
+                Command::Set(set) => set.execute(&db),
+                Command::Get(get) => get.execute(&db),
             },
             Err(err) => Frame::Error(err.to_string()),
         };
