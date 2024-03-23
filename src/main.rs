@@ -1,4 +1,6 @@
-use redis_starter_rust::{Command, Connection, Db, Frame};
+use std::env;
+
+use redis_starter_rust::{Command, Config, Connection, Db, Frame};
 use tokio::{
     io::{self},
     net::{TcpListener, TcpStream},
@@ -6,9 +8,14 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    let config = Config::new(env::args()).unwrap_or_else(|err| {
+        eprintln!("Problem parsing arguments: {}", err);
+        std::process::exit(1);
+    });
+    let addr = format!("127.0.0.1:{}", config.port);
+    let listener = TcpListener::bind(addr).await?;
     let db = Db::new();
-    println!("Server is listening...");
+    println!("Server is listening on port {}...", config.port);
 
     loop {
         let (socket, _) = listener.accept().await?;
