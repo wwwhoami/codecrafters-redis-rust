@@ -15,7 +15,7 @@ impl Config {
                 "-p" | "--port" => {
                     port = Self::match_port(args.next())?;
                 }
-                "--replica-of" => {
+                "--replicaof" => {
                     replica_of = Self::match_replica_of(args.next(), args.next())?;
                 }
 
