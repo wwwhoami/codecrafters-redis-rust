@@ -76,6 +76,8 @@ impl Handle {
 #[derive(Clone)]
 struct Info {
     role: Role,
+    master_replid: String,
+    master_repl_offset: u64,
 }
 
 #[derive(Clone)]
@@ -90,12 +92,33 @@ impl Info {
             Some(_) => Role::Slave,
             None => Role::Master,
         };
+        let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string();
+        let master_repl_offset = 0;
 
-        Self { role }
+        Self {
+            role,
+            master_replid,
+            master_repl_offset,
+        }
     }
 }
 
-impl FromStr for Info {
+impl ToString for Info {
+    fn to_string(&self) -> String {
+        match self.role {
+            Role::Master => format!(
+                "role:master\r\nmaster_replid:{}\r\nmaster_repl_offset:{}\r\n",
+                self.master_replid, self.master_repl_offset
+            ),
+            Role::Slave => format!(
+                "role:slave\r\nmaster_replid:{}\r\nmaster_repl_offset:{}\r\n",
+                self.master_replid, self.master_repl_offset
+            ),
+        }
+    }
+}
+
+impl FromStr for Role {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -105,13 +128,13 @@ impl FromStr for Info {
             _ => return Err("Invalid role"),
         };
 
-        Ok(Self { role })
+        Ok(role)
     }
 }
 
-impl ToString for Info {
+impl ToString for Role {
     fn to_string(&self) -> String {
-        match self.role {
+        match self {
             Role::Master => "role:master".into(),
             Role::Slave => "role:slave".into(),
         }
