@@ -10,6 +10,9 @@ use set::Set;
 mod get;
 use get::Get;
 
+mod info;
+use info::Info;
+
 use crate::{frame::Frame, parse::Parse};
 
 #[derive(Debug)]
@@ -18,6 +21,7 @@ pub enum Command {
     Ping(Ping),
     Set(Set),
     Get(Get),
+    Info(Info),
 }
 
 impl Command {
@@ -29,6 +33,7 @@ impl Command {
             "PING" => Command::Ping(Ping::parse_frames(&mut frames)?),
             "SET" => Command::Set(Set::parse_frames(&mut frames)?),
             "GET" => Command::Get(Get::parse_frames(&mut frames)?),
+            "INFO" => Command::Info(Info::parse_frames(&mut frames)?),
             cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
         };
 

@@ -37,6 +37,7 @@ async fn handle(socket: TcpStream, db: Db) {
                 Command::Ping(ping) => ping.execute(),
                 Command::Set(set) => set.execute(&db),
                 Command::Get(get) => get.execute(&db),
+                Command::Info(info) => info.execute(),
             },
             Err(err) => Frame::Error(err.to_string()),
         };
