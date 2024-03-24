@@ -21,7 +21,7 @@ pub enum Command {
     Ping(Ping),
     Set(Set),
     Get(Get),
-    Info(Info),
+    Info(()),
 }
 
 impl Command {
