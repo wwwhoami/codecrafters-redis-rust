@@ -25,4 +25,8 @@ impl Ping {
     pub fn parse_frames(_frames: &mut Parse) -> crate::Result<Ping> {
         Ok(Ping::new())
     }
+
+    pub fn to_frame(&self) -> Frame {
+        Frame::Array(vec![Frame::Bulk("PING".into())])
+    }
 }

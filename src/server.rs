@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use bytes::Bytes;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::{Command, Config, Connection, Db, Frame};
 
@@ -23,6 +23,11 @@ impl Server {
             "Server is listening on port {}...",
             self.listener.local_addr().unwrap().port()
         );
+        println!("Role: {}", self.info.role.to_string());
+
+        // Connect to the master server if this server is a slave
+        // and send PING command to the master server.
+        self.handshake().await;
 
         loop {
             let (socket, _) = self.listener.accept().await.unwrap();
@@ -41,6 +46,30 @@ impl Server {
                 handle.run().await;
             });
         }
+    }
+
+    /// The handshake is done by connecting to the master server
+    /// and sending a PING command to it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the master server is not reachable.
+    async fn handshake(&self) {
+        if let Some(master) = &self.info.master {
+            let addr = format!("{}:{}", master.0, master.1);
+            let socket = TcpStream::connect(addr).await.unwrap();
+            let mut connection = Connection::new(socket);
+            let ping = Command::Ping(Default::default());
+            let frame = ping.to_frame();
+
+            println!("Handshaking with the master server...");
+            connection.write_frame(&frame).await.unwrap();
+            println!("SENT: {:?}", frame);
+
+            let response = connection.read_frame().await.unwrap().unwrap();
+            println!("GOT: {:?}", response);
+        }
+        println!("Handshake completed!")
     }
 }
 
@@ -76,6 +105,7 @@ impl Handle {
 #[derive(Clone)]
 struct Info {
     role: Role,
+    master: Option<(String, u16)>,
     master_replid: String,
     master_repl_offset: u64,
 }
@@ -88,7 +118,8 @@ enum Role {
 
 impl Info {
     pub fn parse_config(config: Config) -> Self {
-        let role = match config.replica_of {
+        let master = config.replica_of;
+        let role = match master {
             Some(_) => Role::Slave,
             None => Role::Master,
         };
@@ -96,6 +127,7 @@ impl Info {
         let master_repl_offset = 0;
 
         Self {
+            master,
             role,
             master_replid,
             master_repl_offset,

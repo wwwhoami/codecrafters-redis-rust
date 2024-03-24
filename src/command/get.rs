@@ -21,4 +21,11 @@ impl Get {
         let key = frames.next_string()?;
         Ok(Get::new(key))
     }
+
+    pub fn to_frame(&self) -> Frame {
+        Frame::Array(vec![
+            Frame::Bulk("GET".into()),
+            Frame::Bulk(self.key.clone().into()),
+        ])
+    }
 }

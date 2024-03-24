@@ -41,4 +41,14 @@ impl Command {
 
         Ok(command)
     }
+
+    pub fn to_frame(&self) -> Frame {
+        match self {
+            Command::Echo(echo) => echo.to_frame(),
+            Command::Ping(ping) => ping.to_frame(),
+            Command::Set(set) => set.to_frame(),
+            Command::Get(get) => get.to_frame(),
+            Command::Info(_) => Frame::Simple("INFO".into()),
+        }
+    }
 }

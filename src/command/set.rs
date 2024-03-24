@@ -48,4 +48,19 @@ impl Set {
 
         Ok(Set::new(key, value, expire))
     }
+
+    pub fn to_frame(&self) -> Frame {
+        let mut frame = vec![
+            Frame::Bulk("SET".into()),
+            Frame::Bulk(self.key.clone().into()),
+            Frame::Bulk(self.value.clone()),
+        ];
+
+        if let Some(expire) = self.expire {
+            frame.push(Frame::Bulk("EX".into()));
+            frame.push(Frame::Bulk(expire.as_secs().to_string().into()));
+        }
+
+        Frame::Array(frame)
+    }
 }

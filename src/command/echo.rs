@@ -20,4 +20,11 @@ impl Echo {
         let message = frames.next_string()?;
         Ok(Echo::new(message))
     }
+
+    pub fn to_frame(&self) -> Frame {
+        Frame::Array(vec![
+            Frame::Bulk("ECHO".into()),
+            Frame::Bulk(self.message.clone().into()),
+        ])
+    }
 }
