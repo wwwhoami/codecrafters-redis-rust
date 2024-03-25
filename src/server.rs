@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{Command, Config, Connection, Db, Frame};
+use crate::{command::replconf::ReplConf, Command, Config, Connection, Db, Frame};
 
 pub struct Server {
     db: Db,
@@ -77,8 +77,19 @@ impl Server {
 
             let response = connection.read_frame().await.unwrap().unwrap();
             println!("GOT: {:?}", response);
+
+            let replconf = ReplConf::new(self.listener.local_addr().unwrap().port());
+            let frames = replconf.to_frame();
+            for frame in frames.into_array().unwrap() {
+                connection.write_frame(&frame).await.unwrap();
+                println!("SENT: {:?}", frame);
+
+                let response = connection.read_frame().await.unwrap().unwrap();
+                println!("GOT: {:?}", response);
+            }
+
+            println!("Handshake completed!")
         }
-        println!("Handshake completed!")
     }
 }
 
@@ -91,6 +102,8 @@ pub struct Handle {
 impl Handle {
     pub async fn run(&mut self) {
         while let Some(frame) = self.connection.read_frame().await.unwrap() {
+            println!("GOT: {:?}", frame);
+
             let response = self.execute_command(frame);
 
             self.write_response(response).await;

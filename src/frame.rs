@@ -114,6 +114,13 @@ impl Frame {
             actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
         }
     }
+
+    pub fn into_array(self) -> Result<Vec<Frame>, Error> {
+        match self {
+            Frame::Array(vec) => Ok(vec),
+            _ => Err("protocol error: expected array".into()),
+        }
+    }
 }
 
 #[derive(Debug)]

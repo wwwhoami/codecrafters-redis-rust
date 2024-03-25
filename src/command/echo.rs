@@ -1,6 +1,6 @@
 use crate::{Frame, Parse};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Echo {
     message: String,
 }

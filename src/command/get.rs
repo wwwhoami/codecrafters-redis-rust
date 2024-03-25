@@ -1,6 +1,6 @@
 use crate::{Db, Frame, Parse};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Get {
     key: String,
 }

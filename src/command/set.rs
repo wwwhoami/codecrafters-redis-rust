@@ -4,7 +4,7 @@ use bytes::Bytes;
 
 use crate::{db::Db, parse, Frame, Parse};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Set {
     key: String,
     value: Bytes,

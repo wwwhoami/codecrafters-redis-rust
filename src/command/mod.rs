@@ -1,6 +1,4 @@
 mod echo;
-use bytes::Bytes;
-use echo::Echo;
 
 mod ping;
 use ping::Ping;
@@ -14,7 +12,11 @@ use get::Get;
 mod info;
 use info::Info;
 
+pub mod replconf;
+use replconf::ReplConf;
+
 use crate::{frame::Frame, parse::Parse, server, Db};
+use echo::Echo;
 
 #[derive(Debug)]
 pub enum Command {
@@ -22,7 +24,8 @@ pub enum Command {
     Ping(Ping),
     Set(Set),
     Get(Get),
-    Info(()),
+    ReplConf(ReplConf),
+    Info(Info),
 }
 
 impl Command {
@@ -35,6 +38,7 @@ impl Command {
             "SET" => Command::Set(Set::parse_frames(&mut frames)?),
             "GET" => Command::Get(Get::parse_frames(&mut frames)?),
             "INFO" => Command::Info(Info::parse_frames(&mut frames)?),
+            "REPLCONF" => Command::ReplConf(ReplConf::parse_frames(&mut frames)?),
             cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
         };
 
@@ -49,17 +53,19 @@ impl Command {
             Command::Ping(ping) => ping.to_frame(),
             Command::Set(set) => set.to_frame(),
             Command::Get(get) => get.to_frame(),
-            Command::Info(_) => Frame::Simple("INFO".into()),
+            Command::Info(info) => info.to_frame(),
+            Command::ReplConf(replconf) => replconf.to_frame(),
         }
     }
 
-    pub fn execute(&self, db: &Db, info: &server::Info) -> Frame {
+    pub fn execute(&self, db: &Db, server_info: &server::Info) -> Frame {
         match self {
             Command::Echo(echo) => echo.execute(),
             Command::Ping(ping) => ping.execute(),
             Command::Set(set) => set.execute(db),
             Command::Get(get) => get.execute(db),
-            Command::Info(_) => Frame::Bulk(Bytes::from(info.to_string())),
+            Command::Info(info) => info.execute(server_info),
+            Command::ReplConf(replconf) => replconf.execute(),
         }
     }
 }
