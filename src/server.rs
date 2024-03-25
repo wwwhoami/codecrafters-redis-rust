@@ -1,7 +1,10 @@
 use std::str::FromStr;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{command::replconf::ReplConf, Command, Config, Connection, Db, Frame};
+use crate::{
+    command::{psync::Psync, replconf::ReplConf},
+    Command, Config, Connection, Db, Frame,
+};
 
 pub struct Server {
     db: Db,
@@ -68,16 +71,20 @@ impl Server {
             let addr = format!("{}:{}", master.0, master.1);
             let socket = TcpStream::connect(addr).await.unwrap();
             let mut connection = Connection::new(socket);
+
+            println!("Handshaking with the master server...");
+
+            // PING command to the master server
             let ping = Command::Ping(Default::default());
             let frame = ping.to_frame();
 
-            println!("Handshaking with the master server...");
             connection.write_frame(&frame).await.unwrap();
             println!("SENT: {:?}", frame);
 
             let response = connection.read_frame().await.unwrap().unwrap();
             println!("GOT: {:?}", response);
 
+            // REPLCONF command to the master server
             let replconf = ReplConf::new(self.listener.local_addr().unwrap().port());
             let frames = replconf.to_frame();
             for frame in frames.into_array().unwrap() {
@@ -87,6 +94,17 @@ impl Server {
                 let response = connection.read_frame().await.unwrap().unwrap();
                 println!("GOT: {:?}", response);
             }
+
+            // PSYNC command to the master server
+            let offset = -1;
+            let replid = "?";
+            let psync = Command::Psync(Psync::new(offset, replid));
+            let frame = psync.to_frame();
+            connection.write_frame(&frame).await.unwrap();
+            println!("SENT: {:?}", frame);
+
+            let response = connection.read_frame().await.unwrap().unwrap();
+            println!("GOT: {:?}", response);
 
             println!("Handshake completed!")
         }

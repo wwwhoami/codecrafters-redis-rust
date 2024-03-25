@@ -69,6 +69,19 @@ impl Parse {
         }
     }
 
+    pub(crate) fn next_int(&mut self) -> Result<i64, Error> {
+        const ERROR_MSG: &str = "Protocol error: expected integer frame";
+        match self.next_frame()? {
+            Frame::Integer(n) => Ok(n.try_into().unwrap()),
+            Frame::Simple(s) => s.parse().map_err(|_| ERROR_MSG.into()),
+            Frame::Bulk(s) => {
+                let s = str::from_utf8(&s).map_err(|_| ERROR_MSG)?;
+                s.parse().map_err(|_| ERROR_MSG.into())
+            }
+            frame => Err(format!("Protocol error: expected integer frame, got {:?}", frame).into()),
+        }
+    }
+
     pub fn finish(&mut self) -> Result<(), Error> {
         if self.frame_iter.next().is_none() {
             Ok(())

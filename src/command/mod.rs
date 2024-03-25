@@ -15,6 +15,9 @@ use info::Info;
 pub mod replconf;
 use replconf::ReplConf;
 
+pub mod psync;
+use psync::Psync;
+
 use crate::{frame::Frame, parse::Parse, server, Db};
 use echo::Echo;
 
@@ -26,6 +29,7 @@ pub enum Command {
     Get(Get),
     ReplConf(ReplConf),
     Info(Info),
+    Psync(Psync),
 }
 
 impl Command {
@@ -39,6 +43,7 @@ impl Command {
             "GET" => Command::Get(Get::parse_frames(&mut frames)?),
             "INFO" => Command::Info(Info::parse_frames(&mut frames)?),
             "REPLCONF" => Command::ReplConf(ReplConf::parse_frames(&mut frames)?),
+            "PSYNC" => Command::Psync(Psync::parse_frames(&mut frames)?),
             cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
         };
 
@@ -55,6 +60,7 @@ impl Command {
             Command::Get(get) => get.to_frame(),
             Command::Info(info) => info.to_frame(),
             Command::ReplConf(replconf) => replconf.to_frame(),
+            Command::Psync(psync) => psync.to_frame(),
         }
     }
 
@@ -66,6 +72,7 @@ impl Command {
             Command::Get(get) => get.execute(db),
             Command::Info(info) => info.execute(server_info),
             Command::ReplConf(replconf) => replconf.execute(),
+            Command::Psync(psync) => psync.execute(),
         }
     }
 }

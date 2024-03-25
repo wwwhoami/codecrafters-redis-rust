@@ -5,14 +5,14 @@ use crate::{parse, Frame, Parse};
 #[derive(Debug, Default)]
 pub struct ReplConf {
     listening_port: u16,
-    parsed_port: Option<u16>,
+    _parsed_port: Option<u16>,
 }
 
 impl ReplConf {
     pub fn new(port: u16) -> Self {
         Self {
             listening_port: port,
-            parsed_port: None,
+            _parsed_port: None,
         }
     }
 
@@ -42,7 +42,7 @@ impl ReplConf {
 
         Ok(ReplConf {
             listening_port: port,
-            parsed_port: Some(port),
+            _parsed_port: Some(port),
         })
     }
 
