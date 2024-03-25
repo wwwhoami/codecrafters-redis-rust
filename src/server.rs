@@ -1,6 +1,4 @@
 use std::str::FromStr;
-
-use bytes::Bytes;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{Command, Config, Connection, Db, Frame};
@@ -18,10 +16,10 @@ impl Server {
         Self { db, listener, info }
     }
 
-    pub async fn run(self) {
+    pub async fn run(self) -> crate::Result<()> {
         println!(
             "Server is listening on port {}...",
-            self.listener.local_addr().unwrap().port()
+            self.listener.local_addr()?.port()
         );
         println!("Role: {}", self.info.role.to_string());
 
@@ -30,22 +28,33 @@ impl Server {
         self.handshake().await;
 
         loop {
-            let (socket, _) = self.listener.accept().await.unwrap();
-            let db = self.db.clone();
-            let info = self.info.clone();
+            let (socket, _) = match self.listener.accept().await {
+                Ok(connection) => connection,
+                Err(e) => {
+                    eprintln!("Failed to accept connection: {}", e);
+                    continue;
+                }
+            };
 
-            tokio::spawn(async move {
-                let connection = Connection::new(socket);
-
-                let mut handle = Handle {
-                    connection,
-                    db,
-                    info,
-                };
-
-                handle.run().await;
-            });
+            self.handle_connection(socket).await;
         }
+    }
+
+    async fn handle_connection(&self, socket: TcpStream) {
+        let db = self.db.clone();
+        let info = self.info.clone();
+
+        tokio::spawn(async move {
+            let connection = Connection::new(socket);
+
+            let mut handle = Handle {
+                connection,
+                db,
+                info,
+            };
+
+            handle.run().await;
+        });
     }
 
     /// The handshake is done by connecting to the master server
@@ -73,7 +82,7 @@ impl Server {
     }
 }
 
-struct Handle {
+pub struct Handle {
     connection: Connection,
     db: Db,
     info: Info,
@@ -82,35 +91,35 @@ struct Handle {
 impl Handle {
     pub async fn run(&mut self) {
         while let Some(frame) = self.connection.read_frame().await.unwrap() {
-            println!("GOT: {:?}", frame);
+            let response = self.execute_command(frame);
 
-            let response = match Command::from_frame(frame) {
-                Ok(command) => match command {
-                    Command::Echo(echo) => echo.execute(),
-                    Command::Ping(ping) => ping.execute(),
-                    Command::Set(set) => set.execute(&self.db),
-                    Command::Get(get) => get.execute(&self.db),
-                    Command::Info(_) => Frame::Bulk(Bytes::from(self.info.to_string())),
-                },
-                Err(err) => Frame::Error(err.to_string()),
-            };
+            self.write_response(response).await;
+        }
+    }
 
-            self.connection.write_frame(&response).await.unwrap();
+    fn execute_command(&self, frame: Frame) -> Frame {
+        Command::from_frame(frame)
+            .map(|command| command.execute(&self.db, &self.info))
+            .unwrap_or_else(|err| Frame::Error(err.to_string()))
+    }
 
-            println!("SENT: {:?}", response);
+    async fn write_response(&mut self, response: Frame) {
+        match self.connection.write_frame(&response).await {
+            Ok(_) => println!("SENT: {:?}", response),
+            Err(e) => eprintln!("Error writing frame: {}", e),
         }
     }
 }
 
-#[derive(Clone)]
-struct Info {
+#[derive(Clone, Debug)]
+pub struct Info {
     role: Role,
     master: Option<(String, u16)>,
     master_replid: String,
     master_repl_offset: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Role {
     Master,
     Slave,

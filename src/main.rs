@@ -19,7 +19,10 @@ async fn main() -> io::Result<()> {
 
     let server = Server::new(db, listener, config);
 
-    server.run().await;
+    if let Err(err) = server.run().await {
+        eprintln!("Error running server: {}", err);
+        std::process::exit(1);
+    }
 
     Ok(())
 }

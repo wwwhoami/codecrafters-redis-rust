@@ -1,4 +1,5 @@
 mod echo;
+use bytes::Bytes;
 use echo::Echo;
 
 mod ping;
@@ -13,7 +14,7 @@ use get::Get;
 mod info;
 use info::Info;
 
-use crate::{frame::Frame, parse::Parse};
+use crate::{frame::Frame, parse::Parse, server, Db};
 
 #[derive(Debug)]
 pub enum Command {
@@ -49,6 +50,16 @@ impl Command {
             Command::Set(set) => set.to_frame(),
             Command::Get(get) => get.to_frame(),
             Command::Info(_) => Frame::Simple("INFO".into()),
+        }
+    }
+
+    pub fn execute(&self, db: &Db, info: &server::Info) -> Frame {
+        match self {
+            Command::Echo(echo) => echo.execute(),
+            Command::Ping(ping) => ping.execute(),
+            Command::Set(set) => set.execute(db),
+            Command::Get(get) => get.execute(db),
+            Command::Info(_) => Frame::Bulk(Bytes::from(info.to_string())),
         }
     }
 }
