@@ -1,6 +1,8 @@
 use std::vec;
 
-use crate::{parse, Frame, Parse};
+use crate::{parse, server, Db, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug, Default)]
 pub struct ReplConf {
@@ -63,5 +65,19 @@ impl ReplConf {
 
     pub fn execute(&self) -> Frame {
         Frame::Simple("OK".into())
+    }
+}
+
+impl CommandTrait for ReplConf {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(ReplConf::parse_frames(frames)?))
+    }
+
+    fn execute(&self, _db: &Db, _server_info: &server::Info) -> Frame {
+        self.execute()
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

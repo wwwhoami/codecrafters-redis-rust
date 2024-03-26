@@ -1,4 +1,6 @@
-use crate::{Frame, Parse};
+use crate::{server, Db, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug)]
 pub struct Psync {
@@ -31,5 +33,19 @@ impl Psync {
 
     pub fn execute(&self) -> Frame {
         Frame::Simple(format!("FULLRESYNC {} 0", self.replid))
+    }
+}
+
+impl CommandTrait for Psync {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(Psync::parse_frames(frames)?))
+    }
+
+    fn execute(&self, _db: &Db, _server_info: &server::Info) -> Frame {
+        self.execute()
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

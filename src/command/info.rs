@@ -1,4 +1,6 @@
-use crate::{parse::Error, server, Frame, Parse};
+use crate::{parse::Error, server, Db, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug, Default)]
 pub struct Info {}
@@ -21,5 +23,19 @@ impl Info {
 
     pub fn execute(&self, server_info: &server::Info) -> Frame {
         Frame::Bulk(bytes::Bytes::from(server_info.to_string()))
+    }
+}
+
+impl CommandTrait for Info {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(Info::parse_frames(frames)?))
+    }
+
+    fn execute(&self, _db: &Db, server_info: &server::Info) -> Frame {
+        self.execute(server_info)
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

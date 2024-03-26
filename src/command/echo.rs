@@ -1,4 +1,6 @@
-use crate::{Frame, Parse};
+use crate::{server, Db, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug, Default)]
 pub struct Echo {
@@ -26,5 +28,19 @@ impl Echo {
             Frame::Bulk("ECHO".into()),
             Frame::Bulk(self.message.clone().into()),
         ])
+    }
+}
+
+impl CommandTrait for Echo {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(Echo::parse_frames(frames)?))
+    }
+
+    fn execute(&self, _db: &Db, _server_info: &server::Info) -> Frame {
+        self.execute()
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

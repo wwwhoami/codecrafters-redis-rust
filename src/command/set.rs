@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 
-use crate::{db::Db, parse, Frame, Parse};
+use crate::{db::Db, parse, server, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug, Default)]
 pub struct Set {
@@ -62,5 +64,19 @@ impl Set {
         }
 
         Frame::Array(frame)
+    }
+}
+
+impl CommandTrait for Set {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(Set::parse_frames(frames)?))
+    }
+
+    fn execute(&self, db: &Db, _server_info: &server::Info) -> Frame {
+        self.execute(db)
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

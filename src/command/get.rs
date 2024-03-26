@@ -1,4 +1,6 @@
-use crate::{Db, Frame, Parse};
+use crate::{server, Db, Frame, Parse};
+
+use super::CommandTrait;
 
 #[derive(Debug, Default)]
 pub struct Get {
@@ -27,5 +29,19 @@ impl Get {
             Frame::Bulk("GET".into()),
             Frame::Bulk(self.key.clone().into()),
         ])
+    }
+}
+
+impl CommandTrait for Get {
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(Get::parse_frames(frames)?))
+    }
+
+    fn execute(&self, db: &Db, _server_info: &server::Info) -> Frame {
+        self.execute(db)
+    }
+
+    fn to_frame(&self) -> Frame {
+        self.to_frame()
     }
 }

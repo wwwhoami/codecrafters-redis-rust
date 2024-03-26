@@ -2,7 +2,7 @@ use std::str::FromStr;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
-    command::{psync::Psync, replconf::ReplConf},
+    command::{psync::Psync, replconf::ReplConf, Ping},
     Command, Config, Connection, Db, Frame,
 };
 
@@ -75,7 +75,7 @@ impl Server {
             println!("Handshaking with the master server...");
 
             // PING command to the master server
-            let ping = Command::Ping(Default::default());
+            let ping = Ping::default();
             let frame = ping.to_frame();
 
             connection.write_frame(&frame).await.unwrap();
@@ -98,7 +98,7 @@ impl Server {
             // PSYNC command to the master server
             let offset = -1;
             let replid = "?";
-            let psync = Command::Psync(Psync::new(offset, replid));
+            let psync = Psync::new(offset, replid);
             let frame = psync.to_frame();
             connection.write_frame(&frame).await.unwrap();
             println!("SENT: {:?}", frame);
@@ -122,16 +122,10 @@ impl Handle {
         while let Some(frame) = self.connection.read_frame().await.unwrap() {
             println!("GOT: {:?}", frame);
 
-            let response = self.execute_command(frame);
+            let response = Command::execute(frame, &self.db, &self.info);
 
             self.write_response(response).await;
         }
-    }
-
-    fn execute_command(&self, frame: Frame) -> Frame {
-        Command::from_frame(frame)
-            .map(|command| command.execute(&self.db, &self.info))
-            .unwrap_or_else(|err| Frame::Error(err.to_string()))
     }
 
     async fn write_response(&mut self, response: Frame) {
