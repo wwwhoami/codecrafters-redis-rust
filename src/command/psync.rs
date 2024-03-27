@@ -17,10 +17,13 @@ impl Psync {
     }
 
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<Psync> {
-        let replid = frames.next_string()?;
+        let _replid = frames.next_string()?;
         let offset = frames.next_int()?;
 
-        Ok(Psync::new(offset, replid))
+        Ok(Psync::new(
+            offset,
+            "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
+        ))
     }
 
     pub fn to_frame(&self) -> Frame {
