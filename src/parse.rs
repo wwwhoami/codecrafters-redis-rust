@@ -112,7 +112,7 @@ impl From<String> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::EndOfStream => "protocol error; unexpected end of stream".fmt(f),
+            Error::EndOfStream => "Protocol error: unexpected end of stream".fmt(f),
             Error::Other(err) => err.fmt(f),
         }
     }

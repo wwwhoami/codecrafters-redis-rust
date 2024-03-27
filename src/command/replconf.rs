@@ -20,17 +20,13 @@ impl ReplConf {
 
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<ReplConf> {
         match frames.next_string() {
-            Ok(section) if section == "listening-port" => ReplConf::parse_port(frames),
-            Ok(section) if section == "capa" => {
-                if frames.next_string()? == "psync2" {
-                    Ok(Default::default())
-                } else {
-                    Err("Protocol error: expected psync2".into())
+            Ok(section) => match section.as_str() {
+                "listening-port" => ReplConf::parse_port(frames),
+                "capa" => ReplConf::parse_psync2(frames),
+                _ => {
+                    Err(format!("Protocol error: unsupported REPLCONF section: {}", section).into())
                 }
-            }
-            Ok(section) => {
-                Err(format!("Protocol error: unsupported REPLCONF section: {}", section).into())
-            }
+            },
             Err(parse::Error::EndOfStream) => Ok(Default::default()),
             Err(err) => Err(err.into()),
         }
@@ -46,6 +42,15 @@ impl ReplConf {
             listening_port: port,
             _parsed_port: Some(port),
         })
+    }
+
+    fn parse_psync2(frames: &mut Parse) -> crate::Result<ReplConf> {
+        let psync2 = frames.next_string()?;
+        if psync2 == "psync2" {
+            Ok(Default::default())
+        } else {
+            Err("Protocol error: expected command: REPLCONF capa eof capa psync2".into())
+        }
     }
 
     pub fn to_frame(&self) -> Frame {

@@ -118,7 +118,7 @@ impl Frame {
     pub fn into_array(self) -> Result<Vec<Frame>, Error> {
         match self {
             Frame::Array(vec) => Ok(vec),
-            _ => Err("protocol error: expected array".into()),
+            _ => Err("Protocol error: expected array".into()),
         }
     }
 }
@@ -143,13 +143,13 @@ impl From<&str> for Error {
 
 impl From<std::string::FromUtf8Error> for Error {
     fn from(_src: std::string::FromUtf8Error) -> Error {
-        "protocol error; invalid frame format".into()
+        "Protocol error: invalid frame format".into()
     }
 }
 
 impl From<std::num::TryFromIntError> for Error {
     fn from(_src: std::num::TryFromIntError) -> Error {
-        "protocol error; invalid frame format".into()
+        "Protocol error: invalid frame format".into()
     }
 }
 
