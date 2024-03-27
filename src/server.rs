@@ -167,6 +167,10 @@ impl Info {
             master_repl_offset,
         }
     }
+
+    pub fn master_replid(&self) -> &str {
+        &self.master_replid
+    }
 }
 
 impl ToString for Info {

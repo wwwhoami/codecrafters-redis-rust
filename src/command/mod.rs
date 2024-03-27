@@ -1,4 +1,7 @@
+use crate::{frame::Frame, parse::Parse, server, Db};
+
 mod echo;
+use echo::Echo;
 
 mod ping;
 pub use ping::Ping;
@@ -17,9 +20,6 @@ use replconf::ReplConf;
 
 pub mod psync;
 use psync::Psync;
-
-use crate::{frame::Frame, parse::Parse, server, Db};
-use echo::Echo;
 
 #[derive(Debug)]
 pub struct Command;

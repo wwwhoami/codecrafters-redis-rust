@@ -4,6 +4,7 @@ mod connection;
 mod db;
 mod frame;
 mod parse;
+mod replicaiton;
 mod server;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

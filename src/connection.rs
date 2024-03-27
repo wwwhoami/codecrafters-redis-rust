@@ -5,7 +5,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 
 use crate::frame::Error as FrameError;
 use crate::frame::Frame;
@@ -80,11 +80,7 @@ impl Connection {
 
     async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
-            Frame::Simple(val) => {
-                self.stream.write_u8(b'+').await?;
-                self.stream.write_all(val.as_bytes()).await?;
-                self.stream.write_all(b"\r\n").await?;
-            }
+            Frame::Simple(val) => self.write_simple_string(val).await?,
             Frame::Error(val) => {
                 self.stream.write_u8(b'-').await?;
                 self.stream.write_all(val.as_bytes()).await?;
@@ -105,9 +101,22 @@ impl Connection {
             Frame::Null => {
                 self.stream.write_all(b"$-1\r\n").await?;
             }
+            Frame::Rdb(simple, val) => {
+                // Write RDB frame as writing a simple string
+                // and then writing the rdb payload
+                self.write_simple_string(simple).await?;
+                self.write_rdb(val).await?;
+            }
             Frame::Array(_val) => unreachable!(),
         }
 
+        Ok(())
+    }
+
+    async fn write_simple_string(&mut self, val: &str) -> io::Result<()> {
+        self.stream.write_u8(b'+').await?;
+        self.stream.write_all(val.as_bytes()).await?;
+        self.stream.write_all(b"\r\n").await?;
         Ok(())
     }
 
@@ -121,6 +130,22 @@ impl Connection {
         let pos = buf.position() as usize;
         self.stream.write_all(&buf.get_ref()[..pos]).await?;
         self.stream.write_all(b"\r\n").await?;
+
+        Ok(())
+    }
+
+    /// Write RDB frame to the stream
+    /// Sent like $<length>\r\n<contents>
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
+    async fn write_rdb(&mut self, content: &Bytes) -> io::Result<()> {
+        let len = content.len() as u64;
+
+        self.stream.write_u8(b'$').await?;
+        self.write_decimal(len).await?;
+        self.stream.write_all(content).await?;
 
         Ok(())
     }

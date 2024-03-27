@@ -1,4 +1,4 @@
-use crate::{server, Db, Frame, Parse};
+use crate::{replicaiton::rdb, server, Db, Frame, Parse};
 
 use super::CommandTrait;
 
@@ -34,8 +34,13 @@ impl Psync {
         ])
     }
 
-    pub fn execute(&self) -> Frame {
-        Frame::Simple(format!("FULLRESYNC {} 0", self.replid))
+    /// Sent by master to a replica to create a replication stream.
+    pub fn execute(&self, server_info: &server::Info) -> Frame {
+        // Simple string part of the frame
+        let full_resync = format!("FULLRESYNC {} 0", server_info.master_replid());
+        // RDB part of the frame
+        let rdb = rdb::empty_rdb();
+        Frame::Rdb(full_resync, rdb)
     }
 }
 
@@ -44,8 +49,8 @@ impl CommandTrait for Psync {
         Ok(Box::new(Psync::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, _server_info: &server::Info) -> Frame {
-        self.execute()
+    fn execute(&self, _db: &Db, server_info: &server::Info) -> Frame {
+        self.execute(server_info)
     }
 
     fn to_frame(&self) -> Frame {

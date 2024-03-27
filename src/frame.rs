@@ -10,6 +10,8 @@ pub enum Frame {
     Bulk(Bytes),
     Array(Vec<Frame>),
     Null,
+    /// RDB is a special frame that contains a simple string and a rdb payload
+    Rdb(String, Bytes),
 }
 
 impl Frame {
