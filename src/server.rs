@@ -120,7 +120,10 @@ impl SlaveServer {
     }
 
     /// The handshake is done by connecting to the master server
-    /// and sending a PING command to it.
+    /// and sending the following commands:
+    /// 1. PING
+    /// 2. REPLCONF
+    /// 3. PSYNC
     ///
     /// # Panics
     ///
@@ -337,7 +340,6 @@ impl Role {
 #[derive(Clone, Debug)]
 struct Master {
     replicas: Arc<std::sync::Mutex<Vec<Replica>>>,
-    // sender: broadcast::Sender<Frame>,
     master_replid: String,
     master_repl_offset: u64,
 }
