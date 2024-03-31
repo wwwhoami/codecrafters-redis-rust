@@ -109,7 +109,9 @@ impl ReplConf {
             ReplConf::GetAck => Frame::Array(vec![
                 Frame::Bulk(Bytes::from("REPLCONF".to_string())),
                 Frame::Bulk(Bytes::from("ACK".to_string())),
-                Frame::Bulk(Bytes::from("0".to_string())),
+                Frame::Bulk(Bytes::from(
+                    server_info.parsed_command_bytes().unwrap().to_string(),
+                )),
             ]),
         }
     }
@@ -121,6 +123,15 @@ impl CommandTrait for ReplConf {
     }
 
     fn execute(&self, _db: &Db, server_info: &mut server::Info, connection: Connection) -> Frame {
+        self.execute(server_info, connection)
+    }
+
+    fn execute_replica(
+        &self,
+        _db: &Db,
+        server_info: &mut server::Info,
+        connection: Connection,
+    ) -> Frame {
         self.execute(server_info, connection)
     }
 

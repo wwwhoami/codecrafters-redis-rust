@@ -65,7 +65,7 @@ impl SlaveServer {
         let connection = self.connection.clone();
 
         tokio::spawn(async move {
-            let mut handle = Handle {
+            let mut handle = SlaveMasterHandle {
                 connection,
                 db: db1,
                 info: info1,
@@ -76,21 +76,7 @@ impl SlaveServer {
         self.run_listener().await
     }
 
-    pub async fn run_master(&self) -> crate::Result<()> {
-        println!("Role: {}", self.info.role.to_string());
-
-        let mut handle = SlaveMasterHandle {
-            connection: self.connection.clone(),
-            db: self.db.clone(),
-            info: self.info.clone(),
-        };
-
-        handle.run().await;
-
-        Ok(())
-    }
-
-    pub async fn run_listener(self) -> crate::Result<()> {
+    async fn run_listener(self) -> crate::Result<()> {
         println!(
             "Server is listening on port {}...",
             self.listener.local_addr()?.port()
@@ -112,7 +98,7 @@ impl SlaveServer {
             let info = self.info.clone();
 
             tokio::spawn(async move {
-                let mut handle = Handle {
+                let mut handle = SlaveHandle {
                     connection,
                     db,
                     info,
@@ -252,7 +238,40 @@ impl SlaveMasterHandle {
         while let Some(frame) = self.connection.read_frame().await.unwrap() {
             println!("GOT: {:?}", frame);
 
-            let response = Command::execute(
+            let (response, bytes_read) = Command::execute_replica(
+                frame.clone(),
+                &self.db,
+                &mut self.info,
+                self.connection.clone(),
+            );
+
+            if response != Frame::Null {
+                self.write_response(response).await;
+            }
+
+            self.info.incr_parsed_command_bytes(bytes_read as u64);
+        }
+    }
+
+    async fn write_response(&mut self, response: Frame) {
+        match self.connection.write_frame(response.clone()).await {
+            Ok(_) => println!("SENT: {:?}", response),
+            Err(e) => eprintln!("Error writing frame: {}", e),
+        }
+    }
+}
+pub struct SlaveHandle {
+    connection: Connection,
+    db: Db,
+    info: Info,
+}
+
+impl SlaveHandle {
+    pub async fn run(&mut self) {
+        while let Some(frame) = self.connection.read_frame().await.unwrap() {
+            println!("GOT: {:?}", frame);
+
+            let (response, bytes_read) = Command::execute(
                 frame.clone(),
                 &self.db,
                 &mut self.info,
@@ -260,6 +279,8 @@ impl SlaveMasterHandle {
             );
 
             self.write_response(response).await;
+
+            self.info.incr_parsed_command_bytes(bytes_read as u64);
         }
     }
 
@@ -282,7 +303,7 @@ impl Handle {
         while let Some(frame) = self.connection.read_frame().await.unwrap() {
             println!("GOT: {:?}", frame);
 
-            let response = Command::execute(
+            let (response, bytes_read) = Command::execute(
                 frame.clone(),
                 &self.db,
                 &mut self.info,
@@ -292,7 +313,9 @@ impl Handle {
             if self.info.role.is_master() {
                 self.propagate(frame).await;
             }
+
             self.write_response(response).await;
+            self.info.incr_parsed_command_bytes(bytes_read as u64);
         }
     }
 
@@ -320,6 +343,74 @@ impl Handle {
 #[derive(Clone, Debug)]
 pub struct Info {
     role: Role,
+}
+
+impl Info {
+    pub fn parse_config(config: &Config) -> Self {
+        let master = config.replica_of.clone();
+        let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string();
+        let master_repl_offset = 0;
+
+        let role = match master {
+            Some(master) => Role::Slave(Slave::new(master)),
+            None => Role::Master(Master::new(master_replid, master_repl_offset)),
+        };
+
+        Self { role }
+    }
+
+    pub fn get_master(&self) -> Option<&(String, u16)> {
+        self.role.get_master()
+    }
+
+    pub fn master_replid(&self) -> Option<&str> {
+        match &self.role {
+            Role::Master(master) => Some(&master.master_replid),
+            Role::Slave(_) => None,
+        }
+    }
+
+    pub fn add_slave(&mut self, addr: (String, u16), connection: Connection) {
+        match &mut self.role {
+            Role::Master(master) => {
+                master.add_replica(addr, connection).unwrap();
+            }
+            Role::Slave(_) => panic!("Not a master"),
+        }
+    }
+
+    pub fn parsed_command_bytes(&self) -> Option<u64> {
+        match &self.role {
+            Role::Slave(slave) => Some(slave.parsed_command_bytes),
+            Role::Master(_) => None,
+        }
+    }
+
+    pub fn parsed_command_bytes_mut(&mut self) -> Option<&mut u64> {
+        match &mut self.role {
+            Role::Slave(slave) => Some(&mut slave.parsed_command_bytes),
+            Role::Master(_) => None,
+        }
+    }
+
+    pub fn incr_parsed_command_bytes(&mut self, bytes: u64) {
+        match &mut self.role {
+            Role::Slave(slave) => slave.parsed_command_bytes += bytes,
+            Role::Master(_) => {}
+        }
+    }
+}
+
+impl ToString for Info {
+    fn to_string(&self) -> String {
+        match &self.role {
+            Role::Master(master) => format!(
+                "role:master\r\nmaster_replid:{}\r\nmaster_repl_offset:{}\r\n",
+                master.master_replid, master.master_repl_offset
+            ),
+            Role::Slave(_) => "role:slave\r\n".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -410,57 +501,14 @@ impl Replica {
 #[derive(Debug, Clone, Default)]
 struct Slave {
     master: (String, u16),
+    parsed_command_bytes: u64,
 }
 
 impl Slave {
     pub fn new(master: (String, u16)) -> Self {
-        Self { master }
-    }
-}
-
-impl Info {
-    pub fn parse_config(config: &Config) -> Self {
-        let master = config.replica_of.clone();
-        let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string();
-        let master_repl_offset = 0;
-
-        let role = match master {
-            Some(master) => Role::Slave(Slave::new(master)),
-            None => Role::Master(Master::new(master_replid, master_repl_offset)),
-        };
-
-        Self { role }
-    }
-
-    pub fn get_master(&self) -> Option<&(String, u16)> {
-        self.role.get_master()
-    }
-
-    pub fn master_replid(&self) -> Option<&str> {
-        match &self.role {
-            Role::Master(master) => Some(&master.master_replid),
-            Role::Slave(_) => None,
-        }
-    }
-
-    pub fn add_slave(&mut self, addr: (String, u16), connection: Connection) {
-        match &mut self.role {
-            Role::Master(master) => {
-                master.add_replica(addr, connection).unwrap();
-            }
-            Role::Slave(_) => panic!("Not a master"),
-        }
-    }
-}
-
-impl ToString for Info {
-    fn to_string(&self) -> String {
-        match &self.role {
-            Role::Master(master) => format!(
-                "role:master\r\nmaster_replid:{}\r\nmaster_repl_offset:{}\r\n",
-                master.master_replid, master.master_repl_offset
-            ),
-            Role::Slave(_) => "role:slave\r\n".to_string(),
+        Self {
+            master,
+            parsed_command_bytes: 0,
         }
     }
 }

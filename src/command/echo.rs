@@ -40,6 +40,16 @@ impl CommandTrait for Echo {
         self.execute()
     }
 
+    fn execute_replica(
+        &self,
+        _db: &Db,
+        _server_info: &mut server::Info,
+        _connection: Connection,
+    ) -> Frame {
+        self.execute();
+        Frame::Null
+    }
+
     fn to_frame(&self) -> Frame {
         self.to_frame()
     }

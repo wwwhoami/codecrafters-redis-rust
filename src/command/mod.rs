@@ -54,6 +54,7 @@ impl Command {
 
         let command: Box<dyn CommandTrait> = match frames.next_string()?.to_uppercase().as_str() {
             "SET" => Box::new(Set::parse_frames(&mut frames)?),
+            "REPLCONF" => Box::new(ReplConf::parse_frames(&mut frames)?),
             cmd => return Err(format!("Protocol error: not a 'write' command {:?}", cmd).into()),
         };
 
@@ -69,10 +70,28 @@ impl Command {
         db: &Db,
         server_info: &mut server::Info,
         connection: Connection,
-    ) -> Frame {
+    ) -> (Frame, usize) {
         match Command::from_frame(frame) {
-            Ok(command) => command.execute(db, server_info, connection),
-            Err(err) => Frame::Error(err.to_string()),
+            Ok(command) => (
+                command.execute(db, server_info, connection),
+                command.to_frame().encode().bytes().len(),
+            ),
+            Err(err) => (Frame::Error(err.to_string()), 0),
+        }
+    }
+
+    pub fn execute_replica(
+        frame: Frame,
+        db: &Db,
+        server_info: &mut server::Info,
+        connection: Connection,
+    ) -> (Frame, usize) {
+        match Command::from_frame(frame) {
+            Ok(command) => (
+                command.execute_replica(db, server_info, connection),
+                command.to_frame().encode().bytes().len(),
+            ),
+            Err(err) => (Frame::Error(err.to_string()), 0),
         }
     }
 
@@ -102,28 +121,14 @@ pub trait CommandTrait {
     /// Returns the result as a Frame
     fn execute(&self, db: &Db, server_info: &mut server::Info, connection: Connection) -> Frame;
 
+    fn execute_replica(
+        &self,
+        db: &Db,
+        server_info: &mut server::Info,
+        connection: Connection,
+    ) -> Frame;
+
     /// Convert the command to a Frame
     /// Returns the command as a Frame
     fn to_frame(&self) -> Frame;
 }
-
-// pub trait CommandTraitAsyncExecution {
-//     /// Parse the frames into a command
-//     ///
-//     /// # Errors
-//     ///
-//     /// This function will return an error if the frame is not a valid command
-//     fn parse_frames(
-//         &self,
-//         frames: &mut Parse,
-//     ) -> crate::Result<Box<dyn CommandTraitAsyncExecution>>;
-//
-//     /// Execute the command asynchronously
-//     /// Returns the result as a Frame
-//     async fn execute(&self, db: &Db, server_info: &mut server::Info) -> Frame;
-//
-//     /// Convert the command to a Frame
-//     /// Returns the command as a Frame
-//     fn to_frame(&self) -> Frame;
-// }
-//

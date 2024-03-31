@@ -59,6 +59,15 @@ impl CommandTrait for Psync {
         self.execute(server_info)
     }
 
+    fn execute_replica(
+        &self,
+        _db: &Db,
+        server_info: &mut server::Info,
+        _connection: Connection,
+    ) -> Frame {
+        self.execute(server_info)
+    }
+
     fn to_frame(&self) -> Frame {
         self.to_frame()
     }

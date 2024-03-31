@@ -42,6 +42,15 @@ impl CommandTrait for Ping {
         self.execute()
     }
 
+    fn execute_replica(
+        &self,
+        _db: &Db,
+        _server_info: &mut server::Info,
+        _connection: Connection,
+    ) -> Frame {
+        Frame::Null
+    }
+
     fn to_frame(&self) -> Frame {
         self.to_frame()
     }

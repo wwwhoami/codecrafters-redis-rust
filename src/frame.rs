@@ -2,7 +2,7 @@ use std::{fmt, io::Cursor};
 
 use bytes::{Buf, Bytes};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Frame {
     Simple(String),
     Error(String),

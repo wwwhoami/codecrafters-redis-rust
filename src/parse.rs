@@ -6,6 +6,7 @@ use crate::frame::Frame;
 
 pub struct Parse {
     frame_iter: vec::IntoIter<Frame>,
+    bytes_read: usize,
 }
 
 impl Parse {
@@ -23,18 +24,25 @@ impl Parse {
 
         Ok(Parse {
             frame_iter: frames.into_iter(),
+            bytes_read: 0,
         })
     }
 
-    pub fn next_frame(&mut self) -> Result<Frame, Error> {
+    fn next_frame(&mut self) -> Result<Frame, Error> {
         self.frame_iter.next().ok_or(Error::EndOfStream)
     }
 
     pub fn next_string(&mut self) -> Result<String, Error> {
         match self.next_frame()? {
-            Frame::Simple(s) => Ok(s),
+            Frame::Simple(s) => {
+                self.bytes_read += s.len();
+                Ok(s)
+            }
             Frame::Bulk(s) => str::from_utf8(&s)
-                .map(|s| s.to_string())
+                .map(|s| {
+                    self.bytes_read += s.len();
+                    s.to_string()
+                })
                 .map_err(|_| "Protocol error: invalid string".into()),
             frame => Err(format!(
                 "Protocol error: expected simple or bulk string frame, got {:?}",
@@ -46,8 +54,14 @@ impl Parse {
 
     pub fn next_bytes(&mut self) -> Result<Bytes, Error> {
         match self.next_frame()? {
-            Frame::Simple(s) => Ok(s.into_bytes().into()),
-            Frame::Bulk(s) => Ok(s),
+            Frame::Simple(s) => {
+                self.bytes_read += s.len();
+                Ok(s.into_bytes().into())
+            }
+            Frame::Bulk(s) => {
+                self.bytes_read += s.len();
+                Ok(s)
+            }
             frame => Err(format!(
                 "Protocol error: expected simple or bulk string frame, got {:?}",
                 frame
@@ -59,10 +73,17 @@ impl Parse {
     pub fn next_uint(&mut self) -> Result<u64, Error> {
         const ERROR_MSG: &str = "Protocol error: expected integer frame";
         match self.next_frame()? {
-            Frame::Integer(n) => Ok(n),
-            Frame::Simple(s) => s.parse().map_err(|_| ERROR_MSG.into()),
+            Frame::Integer(n) => {
+                self.bytes_read += 8;
+                Ok(n)
+            }
+            Frame::Simple(s) => {
+                self.bytes_read += 8;
+                s.parse().map_err(|_| ERROR_MSG.into())
+            }
             Frame::Bulk(s) => {
                 let s = str::from_utf8(&s).map_err(|_| ERROR_MSG)?;
+                self.bytes_read += 8;
                 s.parse().map_err(|_| ERROR_MSG.into())
             }
             frame => Err(format!("Protocol error: expected integer frame, got {:?}", frame).into()),
@@ -72,19 +93,26 @@ impl Parse {
     pub(crate) fn next_int(&mut self) -> Result<i64, Error> {
         const ERROR_MSG: &str = "Protocol error: expected integer frame";
         match self.next_frame()? {
-            Frame::Integer(n) => Ok(n.try_into().unwrap()),
-            Frame::Simple(s) => s.parse().map_err(|_| ERROR_MSG.into()),
+            Frame::Integer(n) => {
+                self.bytes_read += 8;
+                Ok(n.try_into().unwrap())
+            }
+            Frame::Simple(s) => {
+                self.bytes_read += 8;
+                s.parse().map_err(|_| ERROR_MSG.into())
+            }
             Frame::Bulk(s) => {
                 let s = str::from_utf8(&s).map_err(|_| ERROR_MSG)?;
+                self.bytes_read += 8;
                 s.parse().map_err(|_| ERROR_MSG.into())
             }
             frame => Err(format!("Protocol error: expected integer frame, got {:?}", frame).into()),
         }
     }
 
-    pub fn finish(&mut self) -> Result<(), Error> {
+    pub fn finish(&mut self) -> Result<usize, Error> {
         if self.frame_iter.next().is_none() {
-            Ok(())
+            Ok(self.bytes_read)
         } else {
             Err("Protocol error: end of frame expecred".into())
         }

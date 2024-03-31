@@ -41,6 +41,15 @@ impl CommandTrait for Get {
         self.execute(db)
     }
 
+    fn execute_replica(
+        &self,
+        db: &Db,
+        _server_info: &mut server::Info,
+        _connection: Connection,
+    ) -> Frame {
+        self.execute(db)
+    }
+
     fn to_frame(&self) -> Frame {
         self.to_frame()
     }

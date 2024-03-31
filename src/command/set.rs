@@ -76,6 +76,16 @@ impl CommandTrait for Set {
         self.execute(db)
     }
 
+    fn execute_replica(
+        &self,
+        db: &Db,
+        _server_info: &mut server::Info,
+        _connection: Connection,
+    ) -> Frame {
+        self.execute(db);
+        Frame::Null
+    }
+
     fn to_frame(&self) -> Frame {
         self.to_frame()
     }
