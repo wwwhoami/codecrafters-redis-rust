@@ -17,6 +17,7 @@ use crate::frame::Frame;
 #[derive(Debug)]
 pub enum ConnectionMessage {
     ReadFrame(oneshot::Sender<crate::Result<Option<Frame>>>),
+    ReadRdb(oneshot::Sender<crate::Result<Option<Frame>>>),
     WriteFrame(Frame, oneshot::Sender<crate::Result<()>>),
 }
 
@@ -50,20 +51,31 @@ impl ConnectionReaderActor {
 
     pub async fn run(mut self) -> crate::Result<()> {
         while let Some(message) = self.receiver.recv().await {
-            if let ConnectionMessage::ReadFrame(sender) = message {
-                println!("{:?}: Reading frame", self.id);
+            match message {
+                ConnectionMessage::ReadFrame(sender) => {
+                    println!("{:?}: Reading frame", self.id);
 
-                let frame = self.read_frame().await;
-                let _ = sender.send(frame);
+                    let frame = self.read_frame().await;
+                    let _ = sender.send(frame);
 
-                println!("{:?}: Frame read", self.id)
+                    println!("{:?}: Frame read", self.id)
+                }
+                ConnectionMessage::ReadRdb(sender) => {
+                    println!("{:?}: Reading RDB", self.id);
+
+                    let frame = self.read_rdb().await;
+                    let _ = sender.send(frame);
+
+                    println!("{:?}: RDB read", self.id)
+                }
+                _ => (),
             }
         }
 
         Ok(())
     }
 
-    pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
+    async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
         loop {
             if let Some(frame) = self.parse_frame()? {
                 return Ok(Some(frame));
@@ -88,6 +100,54 @@ impl ConnectionReaderActor {
                 buf.set_position(0);
 
                 let frame = Frame::parse(&mut buf)?;
+
+                self.buffer.advance(len);
+
+                Ok(Some(frame))
+            }
+            // Not enough bytes is present in frame buffer
+            // So wait for more data to be received
+            Err(FrameError::Incomplete) => Ok(None),
+            // Error encountered => connection is invalid
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Read RDB frame from the stream
+    /// RDB frame is sent like $<length>\r\n<contents>
+    /// Doesn't read any other frame type
+    async fn read_rdb(&mut self) -> crate::Result<Option<Frame>> {
+        loop {
+            if let Some(frame) = self.parse_rdb()? {
+                return Ok(Some(frame));
+            }
+
+            if self.stream.read_buf(&mut self.buffer).await? == 0 {
+                if self.buffer.is_empty() {
+                    return Ok(None);
+                }
+                return Err("Connection reset by peer".into());
+            }
+        }
+    }
+
+    /// Returns the parse rdb of this [`ConnectionReaderActor`].
+    /// Used to parse the rdb payload from the buffer.
+    ///
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the buffer is not enough to parse the rdb.
+    fn parse_rdb(&mut self) -> crate::Result<Option<Frame>> {
+        let mut buf = Cursor::new(&self.buffer[..]);
+
+        match Frame::check_rdb(&mut buf) {
+            Ok(_) => {
+                let len = buf.position() as usize;
+
+                buf.set_position(0);
+
+                let frame = Frame::parse_rdb(&mut buf)?;
 
                 self.buffer.advance(len);
 
@@ -187,11 +247,18 @@ impl ConnectionWriterActor {
             Frame::Null => {
                 self.stream.write_all(b"$-1\r\n").await?;
             }
-            Frame::Rdb(simple, val) => {
+            Frame::Rdb(simple_fullresync, rdb_bytes) => {
                 // Write RDB frame as writing a simple string
                 // and then writing the rdb payload
-                self.write_simple_string(simple).await?;
-                self.write_rdb(val).await?;
+                self.write_simple_string(simple_fullresync).await?;
+                self.stream.flush().await?;
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                self.write_rdb(rdb_bytes).await?;
+            }
+            Frame::RawBytes(bytes) => {
+                self.write_rdb(bytes).await?;
             }
             Frame::Array(_val) => unreachable!(),
         }
@@ -285,6 +352,16 @@ impl Connection {
 
         self.read_sender
             .send(ConnectionMessage::ReadFrame(tx))
+            .await?;
+
+        rx.await?
+    }
+
+    pub async fn read_rdb(&self) -> crate::Result<Option<Frame>> {
+        let (tx, rx) = oneshot::channel();
+
+        self.read_sender
+            .send(ConnectionMessage::ReadRdb(tx))
             .await?;
 
         rx.await?

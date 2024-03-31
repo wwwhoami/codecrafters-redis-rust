@@ -12,13 +12,6 @@ impl Parse {
     pub fn new(frame: Frame) -> Result<Parse, Error> {
         let frames = match frame {
             Frame::Array(frames) => frames,
-            Frame::Bulk(s) => {
-                return Err(format!(
-                    "Protocol error: expected frame to be an array, got bulk {:?}",
-                    str::from_utf8(&s)
-                )
-                .into())
-            }
             frame => {
                 return Err(format!(
                     "Protocol error: expected frame to be an array, got {:?}",

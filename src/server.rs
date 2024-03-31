@@ -44,7 +44,7 @@ impl SlaveServer {
     pub async fn new(socket_addr: SocketAddr, db: Db, config: Config) -> crate::Result<Self> {
         let info = Info::parse_config(&config);
 
-        let connection = SlaveServer::handshake(info.clone(), &socket_addr).await?;
+        let connection = SlaveServer::handshake(info.clone(), socket_addr.port()).await?;
         let listener = TcpListener::bind(socket_addr).await.unwrap();
 
         Ok(Self {
@@ -128,16 +128,16 @@ impl SlaveServer {
     /// # Panics
     ///
     /// Panics if the master server is not reachable.
-    async fn handshake(info: Info, socket_addr: &SocketAddr) -> crate::Result<Connection> {
+    async fn handshake(info: Info, local_port: u16) -> crate::Result<Connection> {
         if info.role.is_master() {
             return Err("Error establishing handshake: not a slave".into());
         }
 
-        let local_port = socket_addr.port();
         let master = info.get_master().unwrap();
+
         let addr = format!("{}:{}", master.0, master.1);
         let addr = addr.to_socket_addrs().unwrap().next().unwrap();
-        // let stream = socket.connect(addr).await?;
+
         let stream = TcpStream::connect(addr).await?;
         let connection = Connection::new(stream);
 
@@ -173,6 +173,9 @@ impl SlaveServer {
         println!("SENT: {:?}", frame);
 
         let response = connection.read_frame().await.unwrap().unwrap();
+        println!("GOT: {:?}", response);
+
+        let response = connection.read_rdb().await.unwrap().unwrap();
         println!("GOT: {:?}", response);
 
         println!("Handshake complete!");

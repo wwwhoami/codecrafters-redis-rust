@@ -12,6 +12,7 @@ pub enum Frame {
     Null,
     /// RDB is a special frame that contains a simple string and a rdb payload
     Rdb(String, Bytes),
+    RawBytes(Bytes),
 }
 
 impl Frame {
@@ -70,24 +71,6 @@ impl Frame {
                 }
                 Ok(Frame::Array(vec))
             }
-            // RDB
-            // b'!' => {
-            //     let len = get_decimal(src)? as usize;
-            //     let n = len + 2;
-
-            //     if src.remaining() < n {
-            //         return Err(Error::Incomplete);
-            //     }
-
-            //     let line = get_line(src)?.to_vec();
-            //     let string = String::from_utf8(line)?;
-
-            //     let rdb = Bytes::copy_from_slice(&src.chunk()[..len]);
-            //     // skip remaining butes "\r\n"
-            //     // skip(src, n)?;
-
-            //     Ok(Frame::Rdb(string, rdb))
-            // }
             actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
         }
     }
@@ -130,12 +113,51 @@ impl Frame {
                 }
                 Ok(())
             }
-            // Rdb
-            // b'!' => {
-            //     let len = get_decimal(src)? as usize;
-            //     // skip len + "\r\n"
-            //     skip(src, len + 2)
+            actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
+        }
+    }
+
+    pub fn check_rdb(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
+        match get_u8(src)? {
+            // // Simple string
+            // b'+' => {
+            //     get_line(src)?;
+            //     Ok(())
             // }
+            // RDB
+            b'$' => {
+                let len = get_decimal(src)? as usize;
+                // skip len
+                skip(src, len)
+            }
+            actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
+        }
+    }
+
+    pub fn parse_rdb(src: &mut Cursor<&[u8]>) -> Result<Frame, Error> {
+        match get_u8(src)? {
+            // // Simple string
+            // b'+' => {
+            //     let line = get_line(src)?.to_vec();
+            //     let string = String::from_utf8(line)?;
+            //
+            //     Ok(Frame::Simple(string))
+            // }
+            // RDB
+            b'$' => {
+                let len = get_decimal(src)? as usize;
+                let n = len;
+
+                if src.remaining() < n {
+                    return Err(Error::Incomplete);
+                }
+
+                let rdb = Bytes::copy_from_slice(&src.chunk()[..len]);
+                // skip remaining bytes
+                skip(src, n)?;
+
+                Ok(Frame::RawBytes(rdb))
+            }
             actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
         }
     }
@@ -163,6 +185,11 @@ impl Frame {
                 let rdb_string = encode_simple_string(string);
                 let rdb_bytes = encode_bulk_string(Some(std::str::from_utf8(bytes).unwrap()));
                 rdb_string + &rdb_bytes
+            }
+            Frame::RawBytes(bytes) => {
+                let length = bytes.len();
+                let bytes = std::str::from_utf8(bytes).unwrap();
+                format!("${length}\r\n{bytes}")
             }
         };
     }
