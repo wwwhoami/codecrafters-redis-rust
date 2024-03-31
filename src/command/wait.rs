@@ -8,9 +8,9 @@ pub struct Wait {
 }
 
 impl Wait {
-    pub fn execute(&self) -> Frame {
+    pub fn execute(&self, server_info: &server::Info) -> Frame {
         // Frame::Simple(self.message.clone())
-        Frame::Integer(0)
+        Frame::Integer(server_info.replicas_count() as u64)
     }
 
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<Wait> {
@@ -32,8 +32,8 @@ impl CommandTrait for Wait {
         Ok(Box::new(Wait::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, _server_info: &mut server::Info, _connection: Connection) -> Frame {
-        self.execute()
+    fn execute(&self, _db: &Db, server_info: &mut server::Info, _connection: Connection) -> Frame {
+        self.execute(server_info)
     }
 
     fn execute_replica(

@@ -379,6 +379,13 @@ impl Info {
         }
     }
 
+    pub fn replicas_count(&self) -> usize {
+        match &self.role {
+            Role::Master(master) => master.replicas.lock().unwrap().len(),
+            Role::Slave(_) => 0,
+        }
+    }
+
     pub fn parsed_command_bytes(&self) -> Option<u64> {
         match &self.role {
             Role::Slave(slave) => Some(slave.parsed_command_bytes),
