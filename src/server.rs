@@ -5,7 +5,11 @@ use std::{
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
-    command::{psync::Psync, replconf::ReplConf, Ping},
+    command::{
+        psync::Psync,
+        replconf::{ReplConf, ReplConfListeningPort},
+        Ping,
+    },
     connection::Connection,
     Command, Config, Db, Frame,
 };
@@ -154,7 +158,7 @@ impl SlaveServer {
         println!("GOT: {:?}", response);
 
         // REPLCONF command to the master server
-        let replconf = ReplConf::new(local_port);
+        let replconf = ReplConf::ListeningPort(ReplConfListeningPort(local_port));
         let frames = replconf.to_frame();
         for frame in frames.into_array().unwrap() {
             connection.write_frame(frame.clone()).await.unwrap();
