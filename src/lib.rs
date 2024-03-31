@@ -16,4 +16,5 @@ pub use connection::Connection;
 pub use db::Db;
 pub use frame::Frame;
 pub use parse::Parse;
+pub use server::MasterServer;
 pub use server::Server;

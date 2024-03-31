@@ -1,4 +1,4 @@
-use crate::{parse::Error, server, Db, Frame, Parse};
+use crate::{connection::Connection, parse::Error, server, Db, Frame, Parse};
 
 use super::CommandTrait;
 
@@ -21,7 +21,7 @@ impl Info {
         Frame::Simple("INFO".into())
     }
 
-    pub fn execute(&self, server_info: &server::Info) -> Frame {
+    pub fn execute(&self, server_info: &mut server::Info) -> Frame {
         Frame::Bulk(bytes::Bytes::from(server_info.to_string()))
     }
 }
@@ -31,7 +31,7 @@ impl CommandTrait for Info {
         Ok(Box::new(Info::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &server::Info) -> Frame {
+    fn execute(&self, _db: &Db, server_info: &mut server::Info, _connection: Connection) -> Frame {
         self.execute(server_info)
     }
 

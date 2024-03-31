@@ -44,6 +44,30 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug executable 'redis-starter-rust' replica",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=redis-starter-rust",
+          "--package=redis-starter-rust"
+        ],
+        "filter": {
+          "name": "redis-starter-rust",
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "-p",
+        "6380",
+        "--replicaof",
+        "localhost",
+        "6379"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug unit tests in executable 'redis-starter-rust'",
       "cargo": {
         "args": [

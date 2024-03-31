@@ -1,8 +1,12 @@
 use std::io::{self, Cursor};
 
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufWriter},
-    net::TcpStream,
+    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::{mpsc, oneshot},
 };
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -10,17 +14,53 @@ use bytes::{Buf, Bytes, BytesMut};
 use crate::frame::Error as FrameError;
 use crate::frame::Frame;
 
-pub struct Connection {
-    stream: BufWriter<TcpStream>,
-    buffer: BytesMut,
+#[derive(Debug)]
+pub enum ConnectionMessage {
+    ReadFrame(oneshot::Sender<crate::Result<Option<Frame>>>),
+    WriteFrame(Frame, oneshot::Sender<crate::Result<()>>),
 }
 
-impl Connection {
-    pub fn new(stream: TcpStream) -> Self {
+#[derive(Debug)]
+pub struct ConnectionReaderActor {
+    id: std::net::SocketAddr,
+    stream: BufReader<OwnedReadHalf>,
+    buffer: BytesMut,
+    receiver: mpsc::Receiver<ConnectionMessage>,
+}
+
+impl Drop for ConnectionReaderActor {
+    fn drop(&mut self) {
+        println!("{:?}: Reader dropped", self.id);
+    }
+}
+
+impl ConnectionReaderActor {
+    pub fn new(
+        id: std::net::SocketAddr,
+        stream: OwnedReadHalf,
+        receiver: mpsc::Receiver<ConnectionMessage>,
+    ) -> Self {
         Self {
-            stream: BufWriter::new(stream),
+            id,
+            stream: BufReader::new(stream),
             buffer: BytesMut::with_capacity(4 * 1024),
+            receiver,
         }
+    }
+
+    pub async fn run(mut self) -> crate::Result<()> {
+        while let Some(message) = self.receiver.recv().await {
+            if let ConnectionMessage::ReadFrame(sender) = message {
+                println!("{:?}: Reading frame", self.id);
+
+                let frame = self.read_frame().await;
+                let _ = sender.send(frame);
+
+                println!("{:?}: Frame read", self.id)
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn read_frame(&mut self) -> crate::Result<Option<Frame>> {
@@ -38,7 +78,7 @@ impl Connection {
         }
     }
 
-    pub fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
+    fn parse_frame(&mut self) -> crate::Result<Option<Frame>> {
         let mut buf = Cursor::new(&self.buffer[..]);
 
         match Frame::check(&mut buf) {
@@ -59,6 +99,52 @@ impl Connection {
             // Error encountered => connection is invalid
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct ConnectionWriterActor {
+    id: std::net::SocketAddr,
+    stream: BufWriter<OwnedWriteHalf>,
+    receiver: mpsc::Receiver<ConnectionMessage>,
+}
+
+impl Drop for ConnectionWriterActor {
+    fn drop(&mut self) {
+        println!("{:?}: Writer dropped", self.id)
+    }
+}
+
+impl ConnectionWriterActor {
+    pub fn new(
+        id: std::net::SocketAddr,
+        stream: OwnedWriteHalf,
+        receiver: mpsc::Receiver<ConnectionMessage>,
+    ) -> Self {
+        Self {
+            id,
+            stream: BufWriter::new(stream),
+            receiver,
+        }
+    }
+
+    pub async fn run(mut self) -> crate::Result<()> {
+        while let Some(message) = self.receiver.recv().await {
+            if let ConnectionMessage::WriteFrame(frame, sender) = message {
+                println!("{:?}: Writing frame", self.id);
+
+                let result = self
+                    .write_frame(&frame)
+                    .await
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync + 'static>);
+
+                let _ = sender.send(result);
+
+                println!("{:?}: Frame written", self.id)
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> io::Result<()> {
@@ -148,5 +234,69 @@ impl Connection {
         self.stream.write_all(content).await?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Connection {
+    id: std::net::SocketAddr,
+    write_sender: mpsc::Sender<ConnectionMessage>,
+    read_sender: mpsc::Sender<ConnectionMessage>,
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        println!("{:?}: Connection dropped", self.id)
+    }
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Self {
+        let id = stream.peer_addr().unwrap();
+        let (stream_reader, stream_writer) = stream.into_split();
+
+        let (read_tx, read_rx) = mpsc::channel(10);
+        let reader_actor = ConnectionReaderActor::new(id, stream_reader, read_rx);
+
+        let (write_tx, write_rx) = mpsc::channel(10);
+        let writer_actor = ConnectionWriterActor::new(id, stream_writer, write_rx);
+
+        tokio::spawn(async move {
+            if let Err(e) = reader_actor.run().await {
+                eprintln!("Connection reader actor error: {:?}", e);
+            }
+        });
+
+        tokio::spawn(async move {
+            if let Err(e) = writer_actor.run().await {
+                eprintln!("Connection writer actor error: {:?}", e);
+            }
+        });
+
+        Self {
+            id,
+            write_sender: write_tx,
+            read_sender: read_tx,
+        }
+    }
+
+    pub async fn read_frame(&self) -> crate::Result<Option<Frame>> {
+        let (tx, rx) = oneshot::channel();
+
+        self.read_sender
+            .send(ConnectionMessage::ReadFrame(tx))
+            .await?;
+
+        rx.await?
+    }
+
+    pub async fn write_frame(&self, frame: Frame) -> crate::Result<()> {
+        let (tx, rx) = oneshot::channel();
+
+        self.write_sender
+            .send(ConnectionMessage::WriteFrame(frame, tx))
+            .await?;
+
+        rx.await?
     }
 }

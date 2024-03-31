@@ -1,10 +1,7 @@
 use std::env;
 
 use redis_starter_rust::{Config, Db, Server};
-use tokio::{
-    io::{self},
-    net::TcpListener,
-};
+use tokio::io;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -13,11 +10,11 @@ async fn main() -> io::Result<()> {
         std::process::exit(1);
     });
     let addr = format!("127.0.0.1:{}", config.port);
+    let socket_addr = std::net::SocketAddr::V4(addr.parse().unwrap());
 
-    let listener = TcpListener::bind(addr).await?;
     let db = Db::new();
 
-    let server = Server::new(db, listener, config);
+    let server = Server::new(socket_addr, db, config).await;
 
     if let Err(err) = server.run().await {
         eprintln!("Error running server: {}", err);

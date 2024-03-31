@@ -1,4 +1,4 @@
-use crate::{server, Db, Frame, Parse};
+use crate::{connection::Connection, server, Db, Frame, Parse};
 
 use super::CommandTrait;
 
@@ -36,7 +36,7 @@ impl CommandTrait for Echo {
         Ok(Box::new(Echo::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, _server_info: &server::Info) -> Frame {
+    fn execute(&self, _db: &Db, _server_info: &mut server::Info, _connection: Connection) -> Frame {
         self.execute()
     }
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 
-use crate::{db::Db, parse, server, Frame, Parse};
+use crate::{connection::Connection, db::Db, parse, server, Frame, Parse};
 
 use super::CommandTrait;
 
@@ -72,7 +72,7 @@ impl CommandTrait for Set {
         Ok(Box::new(Set::parse_frames(frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &server::Info) -> Frame {
+    fn execute(&self, db: &Db, _server_info: &mut server::Info, _connection: Connection) -> Frame {
         self.execute(db)
     }
 

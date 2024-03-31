@@ -70,7 +70,24 @@ impl Frame {
                 }
                 Ok(Frame::Array(vec))
             }
+            // RDB
+            // b'!' => {
+            //     let len = get_decimal(src)? as usize;
+            //     let n = len + 2;
 
+            //     if src.remaining() < n {
+            //         return Err(Error::Incomplete);
+            //     }
+
+            //     let line = get_line(src)?.to_vec();
+            //     let string = String::from_utf8(line)?;
+
+            //     let rdb = Bytes::copy_from_slice(&src.chunk()[..len]);
+            //     // skip remaining butes "\r\n"
+            //     // skip(src, n)?;
+
+            //     Ok(Frame::Rdb(string, rdb))
+            // }
             actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
         }
     }
@@ -113,6 +130,12 @@ impl Frame {
                 }
                 Ok(())
             }
+            // Rdb
+            // b'!' => {
+            //     let len = get_decimal(src)? as usize;
+            //     // skip len + "\r\n"
+            //     skip(src, len + 2)
+            // }
             actual => Err(format!("Protocol error: invalid frame type byte `{}`", actual).into()),
         }
     }
@@ -122,6 +145,26 @@ impl Frame {
             Frame::Array(vec) => Ok(vec),
             _ => Err("Protocol error: expected array".into()),
         }
+    }
+
+    pub fn into_bytes(self) -> Bytes {
+        Bytes::from(self.encode())
+    }
+
+    pub fn encode(&self) -> String {
+        return match self {
+            Frame::Simple(string) => encode_simple_string(string),
+            Frame::Error(error) => encode_simple_error(error),
+            Frame::Integer(integer) => encode_integer(*integer as i64),
+            Frame::Bulk(bytes) => encode_bulk_string(Some(std::str::from_utf8(bytes).unwrap())),
+            Frame::Array(array) => encode_array(array),
+            Frame::Null => encode_null(),
+            Frame::Rdb(string, bytes) => {
+                let rdb_string = encode_simple_string(string);
+                let rdb_bytes = encode_bulk_string(Some(std::str::from_utf8(bytes).unwrap()));
+                rdb_string + &rdb_bytes
+            }
+        };
     }
 }
 
@@ -212,3 +255,67 @@ fn get_decimal(src: &mut Cursor<&[u8]>) -> Result<u64, Error> {
         .parse()
         .map_err(|e| format!("Invalid frame format: failed to get_decimal: {}", e).into())
 }
+
+pub fn encode_simple_string(string: &str) -> String {
+    format!("+{string}\r\n")
+}
+
+pub fn encode_simple_error(error: &str) -> String {
+    format!("-{error}\r\n")
+}
+
+pub fn encode_integer(integer: i64) -> String {
+    format!(":{integer}\r\n")
+}
+
+pub fn encode_bulk_string(string_option: Option<&str>) -> String {
+    if string_option.is_none() {
+        return "$-1\r\n".to_owned(); // null bulk string
+    }
+    let string = string_option.unwrap();
+    let length = string.len();
+    format!("${length}\r\n{string}\r\n")
+}
+
+pub fn encode_array(array: &Vec<Frame>) -> String {
+    let length = array.len();
+    let mut result = format!("*{length}\r\n");
+
+    for item in array {
+        result += &item.encode();
+    }
+
+    result
+}
+
+pub fn encode_null() -> String {
+    "_\r\n".to_string()
+}
+
+// pub fn encode_boolean(boolean: bool) -> String {
+//     let boolean_char = if boolean { "t" } else { "f" };
+//     return format!("#{boolean_char}\r\n");
+// }
+
+// pub fn encode_double(double: f64) -> String {
+//     return format!(",{double}\r\n");
+// }
+
+// pub fn encode_bulk_error(bulk_error: &str) -> String {
+//     let length = bulk_error.len();
+//     return format!("!{length}\r\n{bulk_error}\r\n");
+// }
+
+// pub fn encode_verbatim_string(string: &str) -> String {
+//     let length = string.len();
+//     return format!("={length}\r\n{string}\r\n");
+// }
+
+// pub fn encode_push(push: &Vec<Frame>) -> String {
+//     let length = push.len();
+//     let mut result = format!("*{length}\r\n");
+//     for item in push {
+//         result += &item.encode();
+//     }
+//     return result;
+// }
