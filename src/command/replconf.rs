@@ -2,7 +2,7 @@ use std::vec;
 
 use bytes::Bytes;
 
-use crate::{connection::Connection, parse, server, Db, Frame, Parse};
+use crate::{connection::Connection, parse, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
 
@@ -11,9 +11,14 @@ pub struct ReplConfListeningPort(pub u16);
 
 #[derive(Debug)]
 pub enum ReplConf {
+    /// REPLCONF listening-port \<port\>
     ListeningPort(ReplConfListeningPort),
+    /// REPLCONF capa psync2
     Capa,
+    /// REPLCONF getack *
     GetAck,
+    /// REPLCONF ack \<offset\>
+    Ack(u64),
 }
 
 impl ReplConf {
@@ -22,7 +27,8 @@ impl ReplConf {
             Ok(section) => match section.as_str().to_lowercase().as_str() {
                 "listening-port" => ReplConf::parse_port(frames),
                 "capa" => ReplConf::parse_psync2(frames),
-                "getack" => ReplConf::parse_ack(frames),
+                "getack" => ReplConf::parse_get_ack(frames),
+                "ack" => ReplConf::parse_ack(frames),
                 _ => {
                     Err(format!("Protocol error: unsupported REPLCONF section: {}", section).into())
                 }
@@ -51,7 +57,7 @@ impl ReplConf {
         }
     }
 
-    fn parse_ack(frames: &mut Parse) -> crate::Result<ReplConf> {
+    fn parse_get_ack(frames: &mut Parse) -> crate::Result<ReplConf> {
         let ack_arg = frames.next_string()?;
 
         if ack_arg == "*" {
@@ -59,6 +65,12 @@ impl ReplConf {
         } else {
             Err("Protocol error: expected command: REPLCONF getack *".into())
         }
+    }
+
+    fn parse_ack(frames: &mut Parse) -> crate::Result<ReplConf> {
+        let ack_offset = frames.next_uint()?;
+
+        Ok(ReplConf::Ack(ack_offset))
     }
 
     pub fn to_frame(&self) -> Frame {
@@ -93,16 +105,21 @@ impl ReplConf {
             }
             ReplConf::GetAck => Frame::Array(vec![
                 Frame::Bulk(Bytes::from("REPLCONF".to_string())),
-                Frame::Bulk(Bytes::from("getack".to_string())),
+                Frame::Bulk(Bytes::from("GETACK".to_string())),
                 Frame::Bulk(Bytes::from("*".to_string())),
+            ]),
+            ReplConf::Ack(ack_offset) => Frame::Array(vec![
+                Frame::Bulk(Bytes::from("REPLCONF".to_string())),
+                Frame::Bulk(Bytes::from("ACK".to_string())),
+                Frame::Bulk(Bytes::from(ack_offset.to_string())),
             ]),
         }
     }
 
-    pub fn execute(&self, server_info: &mut server::Info, connection: Connection) -> Frame {
+    pub fn execute(&self, server_info: &mut Info, connection: Connection) -> Frame {
         match self {
             ReplConf::ListeningPort(listening_port) => {
-                server_info.add_slave(("localhost".to_string(), listening_port.0), connection);
+                server_info.add_slave(("127.0.0.1".to_string(), listening_port.0), connection);
                 Frame::Simple("OK".into())
             }
             ReplConf::Capa => Frame::Simple("OK".into()),
@@ -110,9 +127,21 @@ impl ReplConf {
                 Frame::Bulk(Bytes::from("REPLCONF".to_string())),
                 Frame::Bulk(Bytes::from("ACK".to_string())),
                 Frame::Bulk(Bytes::from(
-                    server_info.parsed_command_bytes().unwrap().to_string(),
+                    // server_info.parsed_command_bytes().unwrap().to_string(),
+                    server_info.offset().to_string(),
                 )),
             ]),
+            ReplConf::Ack(ack_offset) => {
+                let tx_repl_got_ack = server_info.tx_repl_got_ack().unwrap();
+                tx_repl_got_ack
+                    .send((connection.addr(), *ack_offset))
+                    .unwrap();
+
+                server_info.update_replica_offset(connection.addr(), *ack_offset);
+
+                // Frame::Array(vec![Frame::Bulk("PING".into())])
+                Frame::NoSend
+            }
         }
     }
 }
@@ -122,20 +151,19 @@ impl CommandTrait for ReplConf {
         Ok(Box::new(ReplConf::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &mut server::Info, connection: Connection) -> Frame {
+    fn execute(&self, _db: &Db, server_info: &mut Info, connection: Connection) -> Frame {
         self.execute(server_info, connection)
     }
 
-    fn execute_replica(
-        &self,
-        _db: &Db,
-        server_info: &mut server::Info,
-        connection: Connection,
-    ) -> Frame {
+    fn execute_replica(&self, _db: &Db, server_info: &mut Info, connection: Connection) -> Frame {
         self.execute(server_info, connection)
     }
 
     fn to_frame(&self) -> Frame {
         self.to_frame()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

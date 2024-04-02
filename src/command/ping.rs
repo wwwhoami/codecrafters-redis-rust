@@ -1,4 +1,4 @@
-use crate::{connection::Connection, server, Db, Frame, Parse};
+use crate::{connection::Connection, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
 
@@ -38,20 +38,19 @@ impl CommandTrait for Ping {
         Ok(Box::new(Ping::parse_frames(_frames)?))
     }
 
-    fn execute(&self, _db: &Db, _server_info: &mut server::Info, _connection: Connection) -> Frame {
+    fn execute(&self, _db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute()
     }
 
-    fn execute_replica(
-        &self,
-        _db: &Db,
-        _server_info: &mut server::Info,
-        _connection: Connection,
-    ) -> Frame {
+    fn execute_replica(&self, _db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
         Frame::Null
     }
 
     fn to_frame(&self) -> Frame {
         self.to_frame()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

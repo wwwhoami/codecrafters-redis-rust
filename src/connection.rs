@@ -1,4 +1,7 @@
-use std::io::{self, Cursor};
+use std::{
+    io::{self, Cursor},
+    net::SocketAddr,
+};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
@@ -260,6 +263,7 @@ impl ConnectionWriterActor {
             Frame::RawBytes(bytes) => {
                 self.write_rdb(bytes).await?;
             }
+            Frame::NoSend => {}
             Frame::Array(_val) => unreachable!(),
         }
 
@@ -309,6 +313,7 @@ pub struct Connection {
     id: std::net::SocketAddr,
     write_sender: mpsc::Sender<ConnectionMessage>,
     read_sender: mpsc::Sender<ConnectionMessage>,
+    addr: SocketAddr,
 }
 
 impl Drop for Connection {
@@ -318,7 +323,7 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: TcpStream, addr: SocketAddr) -> Self {
         let id = stream.peer_addr().unwrap();
         let (stream_reader, stream_writer) = stream.into_split();
 
@@ -342,6 +347,7 @@ impl Connection {
 
         Self {
             id,
+            addr,
             write_sender: write_tx,
             read_sender: read_tx,
         }
@@ -375,5 +381,9 @@ impl Connection {
             .await?;
 
         rx.await?
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
     }
 }

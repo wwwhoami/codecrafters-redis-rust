@@ -13,6 +13,8 @@ pub enum Frame {
     /// RDB is a special frame that contains a simple string and a rdb payload
     Rdb(String, Bytes),
     RawBytes(Bytes),
+    /// NoSend is a special frame that indicates that the frame should not be sent to the client
+    NoSend,
 }
 
 impl Frame {
@@ -191,6 +193,7 @@ impl Frame {
                 let bytes = std::str::from_utf8(bytes).unwrap();
                 format!("${length}\r\n{bytes}")
             }
+            Frame::NoSend => "".to_string(),
         };
     }
 }
