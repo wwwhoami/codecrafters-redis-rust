@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    time::{Duration, SystemTime},
+};
 
 use base64::{self, Engine};
 use bytes::Bytes;
@@ -14,7 +18,7 @@ pub fn empty_rdb() -> Bytes {
     Bytes::from(decoded_bytes)
 }
 
-enum RDBOpCode {
+enum RdbOpCode {
     Eof,
     /// Databese selector
     SelectDB,
@@ -26,15 +30,15 @@ enum RDBOpCode {
     Aux,
 }
 
-impl RDBOpCode {
-    fn from_u8(value: &u8) -> crate::Result<RDBOpCode> {
+impl RdbOpCode {
+    fn from_u8(value: &u8) -> crate::Result<RdbOpCode> {
         match value {
-            0xFF => Ok(RDBOpCode::Eof),
-            0xFE => Ok(RDBOpCode::SelectDB),
-            0xFD => Ok(RDBOpCode::ExpireTime),
-            0xFC => Ok(RDBOpCode::ExpireTimeMs),
-            0xFB => Ok(RDBOpCode::ResizeDB),
-            0xFA => Ok(RDBOpCode::Aux),
+            0xFF => Ok(RdbOpCode::Eof),
+            0xFE => Ok(RdbOpCode::SelectDB),
+            0xFD => Ok(RdbOpCode::ExpireTime),
+            0xFC => Ok(RdbOpCode::ExpireTimeMs),
+            0xFB => Ok(RdbOpCode::ResizeDB),
+            0xFA => Ok(RdbOpCode::Aux),
             _ => Err(format!("Invalid RDB opcode {}", value).into()),
         }
     }
@@ -42,35 +46,35 @@ impl RDBOpCode {
     #[allow(dead_code)]
     fn to_u8(&self) -> u8 {
         match self {
-            RDBOpCode::Eof => 0xFF,
-            RDBOpCode::SelectDB => 0xFE,
-            RDBOpCode::ExpireTime => 0xFD,
-            RDBOpCode::ExpireTimeMs => 0xFC,
-            RDBOpCode::ResizeDB => 0xFB,
-            RDBOpCode::Aux => 0xFA,
+            RdbOpCode::Eof => 0xFF,
+            RdbOpCode::SelectDB => 0xFE,
+            RdbOpCode::ExpireTime => 0xFD,
+            RdbOpCode::ExpireTimeMs => 0xFC,
+            RdbOpCode::ResizeDB => 0xFB,
+            RdbOpCode::Aux => 0xFA,
         }
     }
 }
 
-enum RDBEncodingLen {
+enum RdbEncodingLen {
     Bit6(u64),
     Bit14(u64),
     Bit64(u64),
     SpecialEncoding(u32),
 }
 
-impl RDBEncodingLen {
-    fn from_u8(bytes: &mut impl Iterator<Item = u8>) -> crate::Result<RDBEncodingLen> {
+impl RdbEncodingLen {
+    fn from_u8(bytes: &mut impl Iterator<Item = u8>) -> crate::Result<RdbEncodingLen> {
         let first_byte = bytes.next().ok_or("Iter reached end")?;
         let first_2_bytes = first_byte & 192;
 
         match first_2_bytes {
-            0 => Ok(RDBEncodingLen::Bit6(first_byte as u64)),
+            0 => Ok(RdbEncodingLen::Bit6(first_byte as u64)),
             64 => {
                 let first_6_bits = first_byte & 63;
                 let next_byte = bytes.next().ok_or("Iter reached end")?;
                 let value = ((first_6_bits as u16) << 8) | next_byte as u16;
-                Ok(RDBEncodingLen::Bit14(value as u64))
+                Ok(RdbEncodingLen::Bit14(value as u64))
             }
             128 => {
                 let mut val: u64 = 0;
@@ -78,21 +82,21 @@ impl RDBEncodingLen {
                     let next_byte = bytes.next().ok_or("Iter reached end")?;
                     val = (val << 8) | next_byte as u64;
                 }
-                Ok(RDBEncodingLen::Bit64(val))
+                Ok(RdbEncodingLen::Bit64(val))
             }
             192 => {
                 let last_6_bits = first_byte & 63;
 
                 if last_6_bits == 0 {
                     let next_byte = bytes.next().ok_or("Iter reached end")?;
-                    return Ok(RDBEncodingLen::SpecialEncoding(next_byte as u32));
+                    return Ok(RdbEncodingLen::SpecialEncoding(next_byte as u32));
                 } else if last_6_bits < 3 {
                     let mut val: u32 = 0;
                     for _ in 0..last_6_bits {
                         let next_byte = bytes.next().ok_or("Iter reached end")?;
                         val = (val << 8) | next_byte as u32;
                     }
-                    return Ok(RDBEncodingLen::SpecialEncoding(val));
+                    return Ok(RdbEncodingLen::SpecialEncoding(val));
                 }
 
                 Err(format!("Special encoding: {}", last_6_bits).into())
@@ -102,18 +106,18 @@ impl RDBEncodingLen {
     }
 }
 
-impl Display for RDBEncodingLen {
+impl Display for RdbEncodingLen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RDBEncodingLen::Bit6(num) => write!(f, "{}", num),
-            RDBEncodingLen::Bit14(num) => write!(f, "{}", num),
-            RDBEncodingLen::Bit64(num) => write!(f, "{}", num),
-            RDBEncodingLen::SpecialEncoding(num) => write!(f, "{}", num),
+            RdbEncodingLen::Bit6(num) => write!(f, "{}", num),
+            RdbEncodingLen::Bit14(num) => write!(f, "{}", num),
+            RdbEncodingLen::Bit64(num) => write!(f, "{}", num),
+            RdbEncodingLen::SpecialEncoding(num) => write!(f, "{}", num),
         }
     }
 }
 
-enum RDBEncodingType {
+enum RdbEncodingType {
     String,
     // List,
     // Set,
@@ -127,10 +131,10 @@ enum RDBEncodingType {
     // ListQuickList,
 }
 
-impl RDBEncodingType {
-    fn from_u8(value: &u8) -> crate::Result<RDBEncodingType> {
+impl RdbEncodingType {
+    fn from_u8(value: &u8) -> crate::Result<RdbEncodingType> {
         match value {
-            0 => Ok(RDBEncodingType::String),
+            0 => Ok(RdbEncodingType::String),
             e => Err(format!("Invalid RDB value encoding {}", e).into()),
         }
     }
@@ -151,9 +155,9 @@ struct LenPrefixedString {
 
 impl StringEncoding {
     fn from_u8(bytes: &mut impl Iterator<Item = u8>) -> crate::Result<StringEncoding> {
-        let len_encoding = RDBEncodingLen::from_u8(bytes)?;
+        let len_encoding = RdbEncodingLen::from_u8(bytes)?;
         match len_encoding {
-            RDBEncodingLen::Bit6(num) | RDBEncodingLen::Bit14(num) | RDBEncodingLen::Bit64(num) => {
+            RdbEncodingLen::Bit6(num) | RdbEncodingLen::Bit14(num) | RdbEncodingLen::Bit64(num) => {
                 let mut val: Vec<u8> = Vec::new();
                 for _ in 0..num {
                     let byte = bytes.next().ok_or("Iter reached end")?;
@@ -165,7 +169,7 @@ impl StringEncoding {
                 };
                 Ok(StringEncoding::LenPrefixed(lps))
             }
-            RDBEncodingLen::SpecialEncoding(num) => Ok(StringEncoding::Int32(num)),
+            RdbEncodingLen::SpecialEncoding(num) => Ok(StringEncoding::Int32(num)),
         }
     }
 }
@@ -189,8 +193,8 @@ impl RedisDB {
         Self { filename }
     }
 
-    fn get_next_opcode(&mut self, bite: &u8) -> crate::Result<RDBOpCode> {
-        RDBOpCode::from_u8(bite)
+    fn get_next_opcode(&self, bite: &u8) -> crate::Result<RdbOpCode> {
+        RdbOpCode::from_u8(bite)
     }
 
     async fn get_rbd_bytes(&self) -> crate::Result<Vec<u8>> {
@@ -204,7 +208,9 @@ impl RedisDB {
         Ok(buffer)
     }
 
-    pub async fn read_rdb(&mut self) -> crate::Result<HashMap<String, String>> {
+    pub async fn read_rdb(
+        &mut self,
+    ) -> crate::Result<HashMap<String, (String, Option<SystemTime>)>> {
         let mut bytes = self.get_rbd_bytes().await?;
 
         let magic_string = bytes.drain(0..5).collect::<Vec<u8>>();
@@ -216,62 +222,101 @@ impl RedisDB {
         let mut byte_iter = bytes.into_iter().peekable();
         let mut next_byte = byte_iter.next().ok_or("Iter reached end")?;
 
-        let mut db: HashMap<String, String> = HashMap::new();
+        let mut db = HashMap::new();
 
         loop {
             let opcode = self.get_next_opcode(&next_byte)?;
 
             match opcode {
                 // End of rdb reached
-                RDBOpCode::Eof => {
+                RdbOpCode::Eof => {
                     return Ok(db);
                 }
-                RDBOpCode::SelectDB => {
-                    let _db_number = RDBEncodingLen::from_u8(&mut byte_iter)?;
+                RdbOpCode::SelectDB => {
+                    let _db_number = RdbEncodingLen::from_u8(&mut byte_iter)?;
                     let _opcode =
                         self.get_next_opcode(&byte_iter.next().ok_or("Iter reached end")?)?;
-                    let _db_size = RDBEncodingLen::from_u8(&mut byte_iter)?;
-                    let _exp_size = RDBEncodingLen::from_u8(&mut byte_iter)?;
+                    let _db_size = RdbEncodingLen::from_u8(&mut byte_iter)?;
+                    let _exp_size = RdbEncodingLen::from_u8(&mut byte_iter)?;
 
                     loop {
+                        let peeked_byte = *byte_iter.peek().ok_or("Iter reached end")?;
+                        let expiry = self.get_expiry(peeked_byte, &mut byte_iter)?;
+
                         let (k, v) = self.load_key_val(&mut byte_iter)?;
-                        db.insert(k, v);
+                        db.insert(k, (v, expiry));
 
                         if let Some(next_byte) = byte_iter.peek() {
-                            // If next byte is not a valid opcode, skip it
-                            if let Err(_e) = self.get_next_opcode(next_byte) {
-                                continue;
-                            } else {
-                                break;
+                            match self.get_next_opcode(next_byte) {
+                                // proceed to the next key-value pair till we reach RdbOpCode
+                                Ok(opcode) => match opcode {
+                                    RdbOpCode::SelectDB
+                                    | RdbOpCode::Aux
+                                    | RdbOpCode::ResizeDB
+                                    | RdbOpCode::Eof => break,
+                                    _ => continue,
+                                },
+                                Err(_) => continue,
                             }
                         }
                     }
                 }
-                RDBOpCode::Aux => loop {
+                RdbOpCode::Aux => loop {
                     let _key = StringEncoding::from_u8(&mut byte_iter)?.to_string();
                     let _val = StringEncoding::from_u8(&mut byte_iter)?.to_string();
 
                     let nb = byte_iter.peek().ok_or("Iter reached end")?;
 
                     // if next opcode is SelectDB, break, so we can process it
-                    if let RDBOpCode::SelectDB = self.get_next_opcode(nb).unwrap_or(RDBOpCode::Aux)
+                    if let RdbOpCode::SelectDB = self.get_next_opcode(nb).unwrap_or(RdbOpCode::Aux)
                     {
                         break;
                     }
                     // if next opcode is Aux, continue to next key-val pair
-                    if let RDBOpCode::Aux = self.get_next_opcode(nb).unwrap_or(RDBOpCode::SelectDB)
+                    if let RdbOpCode::Aux = self.get_next_opcode(nb).unwrap_or(RdbOpCode::SelectDB)
                     {
                         byte_iter.next().ok_or("Iter reached end")?;
                         continue;
                     }
                 },
-                RDBOpCode::ResizeDB => panic!("ResizeDB should come after select DB"),
-                RDBOpCode::ExpireTime => todo!(),
-                RDBOpCode::ExpireTimeMs => todo!(),
+                RdbOpCode::ResizeDB => panic!("ResizeDB should come after select DB"),
+                RdbOpCode::ExpireTime => panic!("ExpireTime should come after select DB"),
+                RdbOpCode::ExpireTimeMs => panic!("ExpireTimeMs should come after select DB"),
             };
 
             next_byte = byte_iter.next().ok_or("Iter reached end")?;
         }
+    }
+
+    fn get_expiry(
+        &self,
+        next_byte: u8,
+        byte_iter: &mut impl Iterator<Item = u8>,
+    ) -> crate::Result<Option<SystemTime>> {
+        let expiry = match self.get_next_opcode(&next_byte) {
+            Err(_) => None,
+            Ok(opcode) => match opcode {
+                RdbOpCode::ExpireTime => {
+                    let _ = byte_iter.next().ok_or("Iter reached end")?;
+
+                    let arr = byte_iter.take(4).collect::<Vec<u8>>();
+                    let expiry = u64::from_le_bytes(arr.try_into().unwrap());
+
+                    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(expiry))
+                }
+                RdbOpCode::ExpireTimeMs => {
+                    let _ = byte_iter.next().ok_or("Iter reached end")?;
+
+                    let arr = byte_iter.take(8).collect::<Vec<u8>>();
+                    let expiry = u64::from_le_bytes(arr.try_into().unwrap());
+
+                    SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(expiry))
+                }
+                _ => None,
+            },
+        };
+
+        Ok(expiry)
     }
 
     fn load_key_val(
@@ -281,9 +326,9 @@ impl RedisDB {
         let val_type_byte = bytes.next().ok_or("Iter reached end")?;
         let key = StringEncoding::from_u8(bytes)?.to_string();
 
-        let val_encoding = RDBEncodingType::from_u8(&val_type_byte)?;
+        let val_encoding = RdbEncodingType::from_u8(&val_type_byte)?;
         match val_encoding {
-            RDBEncodingType::String => {
+            RdbEncodingType::String => {
                 let val_string_encoding = StringEncoding::from_u8(bytes)?;
                 let val = val_string_encoding.to_string();
 

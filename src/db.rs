@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
@@ -51,12 +51,24 @@ impl Db {
         db
     }
 
-    pub fn from_rdb(rdb: HashMap<String, String>) -> Self {
+    pub fn from_rdb(rdb: HashMap<String, (String, Option<SystemTime>)>) -> Self {
         let db = Self::new();
+        let current_time = SystemTime::now();
 
         // Insert all the entries from the RDB into the database
-        for (key, value) in rdb {
-            db.set(key, Bytes::from(value), None);
+        for (key, (value, expiry)) in rdb {
+            let expire = match expiry {
+                Some(expiry) => match expiry.duration_since(current_time) {
+                    // If the expiry is in the future, then we set the expiry
+                    Ok(duration) => Some(duration),
+                    // If the expiry is in the past, then the key has expired
+                    // so we skip inserting it
+                    Err(_) => continue,
+                },
+                None => None,
+            };
+
+            db.set(key, Bytes::from(value), expire);
         }
 
         db
