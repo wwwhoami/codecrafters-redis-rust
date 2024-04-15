@@ -18,5 +18,6 @@ pub use db::Db;
 pub use frame::Frame;
 pub use info::Info;
 pub use parse::Parse;
+pub use replicaiton::rdb::RedisDB;
 pub use server::MasterServer;
 pub use server::Server;

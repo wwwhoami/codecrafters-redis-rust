@@ -51,6 +51,17 @@ impl Db {
         db
     }
 
+    pub fn from_rdb(rdb: HashMap<String, String>) -> Self {
+        let db = Self::new();
+
+        // Insert all the entries from the RDB into the database
+        for (key, value) in rdb {
+            db.set(key, Bytes::from(value), None);
+        }
+
+        db
+    }
+
     /// Sets the value of a key in the database.
     /// If the key already exists, the previous value will be overwritten.
     /// Optionally, the key can be set to expire after a specified duration.
@@ -108,6 +119,11 @@ impl Db {
     pub fn get(&self, key: &str) -> Option<Bytes> {
         let store = self.shared.store.lock().unwrap();
         store.data.get(key).map(|entry| entry.value.clone())
+    }
+
+    pub fn keys(&self) -> Vec<String> {
+        let store = self.shared.store.lock().unwrap();
+        store.data.keys().cloned().collect()
     }
 
     /// Removes the entry with the specified key from the database.

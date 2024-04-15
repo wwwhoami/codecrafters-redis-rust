@@ -25,7 +25,7 @@ impl Info {
         // TODO: Generate a random master_replid
         let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string();
         let dir = config.dir.clone();
-        let dbfilename = config.dbfilename.clone();
+        let dbfilename = config.db_filename.clone();
 
         let role = match master {
             Some(master) => Role::Slave(Slave::new(master)),

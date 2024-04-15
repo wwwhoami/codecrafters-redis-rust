@@ -12,6 +12,9 @@ use set::Set;
 mod get;
 use get::Get;
 
+mod keys;
+pub use keys::Keys;
+
 mod info;
 use info::Info;
 
@@ -45,6 +48,7 @@ impl Command {
                 "PING" => Box::new(Ping::parse_frames(&mut frames)?),
                 "SET" => Box::new(Set::parse_frames(&mut frames)?),
                 "GET" => Box::new(Get::parse_frames(&mut frames)?),
+                "KEYS" => Box::new(Keys::parse_frames(&mut frames)?),
                 "INFO" => Box::new(Info::parse_frames(&mut frames)?),
                 "REPLCONF" => Box::new(ReplConf::parse_frames(&mut frames)?),
                 "PSYNC" => Box::new(Psync::parse_frames(&mut frames)?),

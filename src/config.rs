@@ -4,7 +4,7 @@ pub struct Config {
     pub port: u16,
     pub replica_of: Option<(String, u16)>,
     pub dir: String,
-    pub dbfilename: String,
+    pub db_filename: String,
 }
 
 impl Config {
@@ -12,7 +12,7 @@ impl Config {
         let mut port = Self::parse_port_from_env()?;
         let mut replica_of = None;
         let mut dir = String::new();
-        let mut dbfilename = String::new();
+        let mut db_filename = String::new();
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -26,7 +26,7 @@ impl Config {
                     dir = Self::match_dir(args.next())?;
                 }
                 "--dbfilename" => {
-                    dbfilename = Self::match_dbfilename(args.next())?;
+                    db_filename = Self::match_dbfilename(args.next())?;
                 }
 
                 _ => {}
@@ -37,7 +37,7 @@ impl Config {
             port,
             replica_of,
             dir,
-            dbfilename,
+            db_filename,
         })
     }
 

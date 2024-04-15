@@ -199,6 +199,7 @@ pub struct MasterServer {
 impl MasterServer {
     pub async fn new(socket_addr: SocketAddr, db: Db, config: Config) -> Self {
         let info = Info::parse_config(&config);
+
         let listener = TcpListener::bind(socket_addr).await.unwrap();
 
         Self { db, listener, info }

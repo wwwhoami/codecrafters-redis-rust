@@ -1,6 +1,6 @@
 use std::env;
 
-use redis_starter_rust::{Config, Db, Server};
+use redis_starter_rust::{Config, Db, RedisDB, Server};
 use tokio::io;
 
 #[tokio::main]
@@ -12,7 +12,7 @@ async fn main() -> io::Result<()> {
     let addr = format!("127.0.0.1:{}", config.port);
     let socket_addr = std::net::SocketAddr::V4(addr.parse().unwrap());
 
-    let db = Db::new();
+    let db = init_db(&config).await;
 
     let server = Server::new(socket_addr, db, config).await;
 
@@ -22,4 +22,17 @@ async fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+async fn init_db(config: &Config) -> Db {
+    let rdb_filename = format!("{}/{}", config.dir, config.db_filename);
+    let mut rdb = RedisDB::new(rdb_filename);
+
+    match rdb.read_rdb().await {
+        Ok(db_from_file) => Db::from_rdb(db_from_file),
+        Err(err) => {
+            eprintln!("Error reading RDB file: {}", err);
+            Db::new()
+        }
+    }
 }
