@@ -8,10 +8,10 @@ pub struct Info {}
 impl Info {
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<Info> {
         match frames.next_string() {
-            Ok(section) if section == "replication" => Ok(Info {}),
-            Ok(section) => {
-                Err(format!("Protocol error: unsupported INFO section: {}", section).into())
-            }
+            Ok(section) => match section.as_str().to_lowercase().as_str() {
+                "replication" => Ok(Info {}),
+                _ => Err(format!("Protocol error: unsupported INFO section: {}", section).into()),
+            },
             Err(Error::EndOfStream) => Ok(Info {}),
             Err(err) => Err(err.into()),
         }

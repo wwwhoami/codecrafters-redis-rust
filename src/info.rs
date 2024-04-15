@@ -15,19 +15,29 @@ use crate::{command::replconf::ReplConf, Config, Connection, Frame};
 pub struct Info {
     role: Role,
     offset: u64,
+    dir: String,
+    dbfilename: String,
 }
 
 impl Info {
     pub fn parse_config(config: &Config) -> Self {
         let master = config.replica_of.clone();
+        // TODO: Generate a random master_replid
         let master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb".to_string();
+        let dir = config.dir.clone();
+        let dbfilename = config.dbfilename.clone();
 
         let role = match master {
             Some(master) => Role::Slave(Slave::new(master)),
             None => Role::Master(Master::new(master_replid)),
         };
 
-        Self { role, offset: 0 }
+        Self {
+            role,
+            offset: 0,
+            dir,
+            dbfilename,
+        }
     }
 
     pub fn get_master(&self) -> Option<&(String, u16)> {
@@ -107,6 +117,14 @@ impl Info {
 
     pub fn role(&self) -> &Role {
         &self.role
+    }
+
+    pub fn dir(&self) -> &str {
+        &self.dir
+    }
+
+    pub fn dbfilename(&self) -> &str {
+        &self.dbfilename
     }
 }
 
