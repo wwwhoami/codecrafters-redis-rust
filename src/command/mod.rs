@@ -30,6 +30,9 @@ use wait::Wait;
 pub mod config;
 use config::Config;
 
+pub mod get_type;
+use get_type::Type;
+
 #[derive(Debug)]
 pub struct Command;
 
@@ -54,6 +57,7 @@ impl Command {
                 "PSYNC" => Box::new(Psync::parse_frames(&mut frames)?),
                 "WAIT" => Box::new(Wait::parse_frames(&mut frames)?),
                 "CONFIG" => Box::new(Config::parse_frames(&mut frames)?),
+                "TYPE" => Box::new(Type::parse_frames(&mut frames)?),
                 cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
             };
 
