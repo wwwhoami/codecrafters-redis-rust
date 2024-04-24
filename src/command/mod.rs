@@ -33,6 +33,9 @@ use config::Config;
 pub mod get_type;
 use get_type::Type;
 
+mod xadd;
+use xadd::XAdd;
+
 #[derive(Debug)]
 pub struct Command;
 
@@ -58,6 +61,7 @@ impl Command {
                 "WAIT" => Box::new(Wait::parse_frames(&mut frames)?),
                 "CONFIG" => Box::new(Config::parse_frames(&mut frames)?),
                 "TYPE" => Box::new(Type::parse_frames(&mut frames)?),
+                "XADD" => Box::new(XAdd::parse_frames(&mut frames)?),
                 cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
             };
 

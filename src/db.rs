@@ -15,7 +15,27 @@ pub struct Db {
 #[derive(Debug)]
 pub struct Shared {
     store: Mutex<Store>,
+    streams: Mutex<HashMap<String, Stream>>,
     task_expiry_notify: Notify,
+}
+
+#[derive(Debug)]
+pub struct Stream {
+    entries: Vec<StreamEntry>,
+}
+
+impl Stream {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct StreamEntry {
+    id: (u64, usize),
+    key_value: Vec<(String, Bytes)>,
 }
 
 #[derive(Debug)]
@@ -159,6 +179,45 @@ impl Db {
             None => None,
         }
     }
+
+    pub fn xadd(&self, stream_key: String, key_value: Vec<(String, String)>) -> String {
+        let mut streams = self.shared.streams.lock().unwrap();
+        let stream = streams
+            .entry(stream_key.clone())
+            .or_insert_with(Stream::new);
+
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let id = stream.entries.len();
+        let entry_id = (timestamp, id);
+
+        stream.entries.push(StreamEntry {
+            id: entry_id,
+            key_value: key_value
+                .into_iter()
+                .map(|(key, value)| (key, Bytes::from(value)))
+                .collect(),
+        });
+
+        format!("{}-{}", entry_id.0, entry_id.1)
+    }
+
+    pub fn get_type(&self, key: &str) -> String {
+        let streams = self.shared.streams.lock().unwrap();
+        if streams.contains_key(key) {
+            return "stream".to_string();
+        }
+
+        let store = self.shared.store.lock().unwrap();
+
+        match store.data.get(key) {
+            Some(_entry) => "string".to_string(),
+            None => "none".to_string(),
+        }
+    }
 }
 
 impl Default for Db {
@@ -192,6 +251,7 @@ impl Shared {
                 next_id: 0,
                 is_dropped: false,
             }),
+            streams: Mutex::new(HashMap::new()),
             task_expiry_notify: Notify::new(),
         }
     }

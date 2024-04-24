@@ -13,10 +13,8 @@ impl Type {
     }
 
     pub fn execute(&self, db: &Db) -> Frame {
-        match db.get(&self.key) {
-            Some(_entry) => Frame::Simple("string".into()),
-            None => Frame::Simple("none".into()),
-        }
+        let t = db.get_type(&self.key);
+        Frame::Simple(t)
     }
 
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<Type> {
