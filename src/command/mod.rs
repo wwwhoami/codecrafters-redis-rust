@@ -35,6 +35,7 @@ use get_type::Type;
 
 mod xadd;
 use xadd::XAdd;
+pub use xadd::XAddId;
 
 #[derive(Debug)]
 pub struct Command;

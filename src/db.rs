@@ -7,6 +7,8 @@ use std::{
 use bytes::Bytes;
 use tokio::{sync::Notify, time::Instant};
 
+use crate::command::XAddId;
+
 #[derive(Debug, Clone)]
 pub struct Db {
     shared: Arc<Shared>,
@@ -35,7 +37,14 @@ impl Stream {
 #[derive(Debug)]
 struct StreamEntry {
     id: (u64, usize),
+    #[allow(unused)]
     key_value: Vec<(String, Bytes)>,
+}
+
+impl StreamEntry {
+    pub fn new(id: (u64, usize), key_value: Vec<(String, Bytes)>) -> Self {
+        Self { id, key_value }
+    }
 }
 
 #[derive(Debug)]
@@ -180,29 +189,53 @@ impl Db {
         }
     }
 
-    pub fn xadd(&self, stream_key: String, key_value: Vec<(String, String)>) -> String {
+    pub fn xadd(
+        &self,
+        stream_key: String,
+        id: XAddId,
+        key_value: Vec<(String, Bytes)>,
+    ) -> crate::Result<String> {
         let mut streams = self.shared.streams.lock().unwrap();
         let stream = streams
             .entry(stream_key.clone())
             .or_insert_with(Stream::new);
 
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let id = match id {
+            XAddId::Auto => {
+                let timestamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                (timestamp, 0)
+            }
+            XAddId::AutoSeq(timestamp) => {
+                let seq = stream.entries.len();
+                (timestamp, seq)
+            }
+            XAddId::Explicit(id) => {
+                let (timestamp, seq) = id;
+                let last_id = stream
+                    .entries
+                    .last()
+                    .map(|entry| entry.id)
+                    .unwrap_or((0, 0));
+                let (last_timestamp, last_seq) = last_id;
 
-        let id = stream.entries.len();
-        let entry_id = (timestamp, id);
+                if timestamp < last_timestamp {
+                    return Err("Timestamp is less than the last timestamp".into());
+                }
+                if seq <= last_seq {
+                    return Err("Sequence is less than the last sequence or equal to it".into());
+                }
+                id
+            }
+        };
 
-        stream.entries.push(StreamEntry {
-            id: entry_id,
-            key_value: key_value
-                .into_iter()
-                .map(|(key, value)| (key, Bytes::from(value)))
-                .collect(),
-        });
+        let entry = StreamEntry::new(id, key_value);
 
-        format!("{}-{}", entry_id.0, entry_id.1)
+        stream.entries.push(entry);
+
+        Ok(format!("{}-{}", id.0, id.1))
     }
 
     pub fn get_type(&self, key: &str) -> String {
