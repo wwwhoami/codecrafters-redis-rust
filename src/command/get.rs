@@ -1,4 +1,4 @@
-use crate::{connection::Connection, Db, Frame, Info, Parse};
+use crate::{connection::Connection, db::Entry, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
 
@@ -14,7 +14,8 @@ impl Get {
 
     pub fn execute(&self, db: &Db) -> Frame {
         match db.get(&self.key) {
-            Some(value) => Frame::Bulk(value),
+            Some(Entry::String(entry)) => Frame::Bulk(entry.value().clone()),
+            Some(_) => Frame::Null,
             None => Frame::Null,
         }
     }

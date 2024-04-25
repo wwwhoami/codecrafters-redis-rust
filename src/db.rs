@@ -17,36 +17,8 @@ pub struct Db {
 #[derive(Debug)]
 pub struct Shared {
     store: Mutex<Store>,
-    streams: Mutex<HashMap<String, Stream>>,
     task_expiry_notify: Notify,
 }
-
-#[derive(Debug)]
-pub struct Stream {
-    entries: Vec<StreamEntry>,
-}
-
-impl Stream {
-    pub fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct StreamEntry {
-    id: (u128, usize),
-    #[allow(unused)]
-    key_value: Vec<(String, Bytes)>,
-}
-
-impl StreamEntry {
-    pub fn new(id: (u128, usize), key_value: Vec<(String, Bytes)>) -> Self {
-        Self { id, key_value }
-    }
-}
-
 #[derive(Debug)]
 pub struct Store {
     // Key to entry mapping for all entries
@@ -61,11 +33,44 @@ pub struct Store {
 }
 
 #[derive(Debug, Clone)]
-pub struct Entry {
+pub enum Entry {
+    /// Entry for a string value
+    String(StringEntry),
+    /// Entry for a stream value
+    Stream(Vec<StreamEntry>),
+}
+
+#[derive(Debug, Clone)]
+pub struct StringEntry {
     // Unique identifier for the entry
     id: u64,
     value: Bytes,
     expires_at: Option<Instant>,
+}
+
+impl StringEntry {
+    pub fn value(&self) -> &Bytes {
+        &self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut Bytes {
+        &mut self.value
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StreamEntry {
+    /// Unique identifier for the entry
+    id: (u128, usize),
+    /// Key-value pairs for the entry
+    #[allow(unused)]
+    key_value: Vec<(String, Bytes)>,
+}
+
+impl StreamEntry {
+    pub fn new(id: (u128, usize), key_value: Vec<(String, Bytes)>) -> Self {
+        Self { id, key_value }
+    }
 }
 
 impl Db {
@@ -128,17 +133,24 @@ impl Db {
             when
         });
 
-        let entry = Entry {
+        let entry = Entry::String(StringEntry {
             id,
             value,
             expires_at,
-        };
+        });
 
         // If there was an existing entry with an expiry, remove the previous expiry
         let prev = store.data.insert(key, entry);
         if let Some(prev) = prev {
-            if let Some(expiry) = prev.expires_at {
-                store.expires.remove(&(expiry, prev.id));
+            match prev {
+                Entry::String(prev) => {
+                    if let Some(expiry) = prev.expires_at {
+                        store.expires.remove(&(expiry, prev.id));
+                    }
+                }
+                // If the previous entry was a stream, then we do not need to remove the expiry
+                // as streams do not have an expiry
+                Entry::Stream(_) => {}
             }
         }
 
@@ -157,9 +169,9 @@ impl Db {
     /// # Panics
     ///
     /// Panics if the lock is poisoned.
-    pub fn get(&self, key: &str) -> Option<Bytes> {
+    pub fn get(&self, key: &str) -> Option<Entry> {
         let store = self.shared.store.lock().unwrap();
-        store.data.get(key).map(|entry| entry.value.clone())
+        store.data.get(key).cloned()
     }
 
     pub fn keys(&self) -> Vec<String> {
@@ -174,16 +186,21 @@ impl Db {
     /// # Panics
     ///
     /// Panics if the lock is poisoned.
-    pub fn remove(&self, key: &str) -> Option<Bytes> {
+    pub fn remove(&self, key: &str) -> Option<Entry> {
         let mut store = self.shared.store.lock().unwrap();
 
         match store.data.remove(key) {
             Some(prev) => {
-                // If there was an existing entry with an expiry, remove the previous expiry
-                if let Some(expiry) = prev.expires_at {
-                    store.expires.remove(&(expiry, prev.id));
+                match prev {
+                    Entry::String(prev) => {
+                        // If there was an existing entry with an expiry, remove the previous expiry
+                        if let Some(expiry) = prev.expires_at {
+                            store.expires.remove(&(expiry, prev.id));
+                        }
+                        Some(Entry::String(prev))
+                    }
+                    Entry::Stream(prev) => Some(Entry::Stream(prev)),
                 }
-                Some(prev.value)
             }
             None => None,
         }
@@ -195,10 +212,16 @@ impl Db {
         id: XAddId,
         key_value: Vec<(String, Bytes)>,
     ) -> crate::Result<String> {
-        let mut streams = self.shared.streams.lock().unwrap();
-        let stream = streams
+        let mut store = self.shared.store.lock().unwrap();
+        let stream = store
+            .data
             .entry(stream_key.clone())
-            .or_insert_with(Stream::new);
+            .or_insert_with(|| Entry::Stream(Vec::new()));
+
+        let stream = match stream {
+            Entry::Stream(stream) => stream,
+            _ => return Err("ERR Operation against a key holding the wrong kind of value".into()),
+        };
 
         let id = match id {
             XAddId::Auto => {
@@ -206,7 +229,6 @@ impl Db {
                     .duration_since(SystemTime::UNIX_EPOCH)?
                     .as_millis();
                 let id = stream
-                    .entries
                     .iter()
                     .filter(|entry| entry.id.0 == timestamp)
                     .count();
@@ -215,7 +237,6 @@ impl Db {
             }
             XAddId::AutoSeq(timestamp) => {
                 let seq = stream
-                    .entries
                     .iter()
                     .filter(|entry| entry.id.0 == timestamp)
                     .count();
@@ -225,11 +246,7 @@ impl Db {
             }
             XAddId::Explicit(id) => {
                 let (timestamp, seq) = id;
-                let last_id = stream
-                    .entries
-                    .last()
-                    .map(|entry| entry.id)
-                    .unwrap_or((0, 0));
+                let last_id = stream.last().map(|entry| entry.id).unwrap_or((0, 0));
                 let (last_timestamp, last_seq) = last_id;
 
                 if timestamp < last_timestamp {
@@ -245,21 +262,19 @@ impl Db {
 
         let entry = StreamEntry::new(id, key_value);
 
-        stream.entries.push(entry);
+        stream.push(entry);
 
         Ok(format!("{}-{}", id.0, id.1))
     }
 
     pub fn get_type(&self, key: &str) -> String {
-        let streams = self.shared.streams.lock().unwrap();
-        if streams.contains_key(key) {
-            return "stream".to_string();
-        }
-
         let store = self.shared.store.lock().unwrap();
 
         match store.data.get(key) {
-            Some(_entry) => "string".to_string(),
+            Some(entry) => match entry {
+                Entry::String(_) => "string".to_string(),
+                Entry::Stream(_) => "stream".to_string(),
+            },
             None => "none".to_string(),
         }
     }
@@ -296,7 +311,6 @@ impl Shared {
                 next_id: 0,
                 is_dropped: false,
             }),
-            streams: Mutex::new(HashMap::new()),
             task_expiry_notify: Notify::new(),
         }
     }
@@ -328,8 +342,14 @@ impl Shared {
 
             // Else remove the entry from both the data and expires stores
             if let Some(entry) = store.data.get(key) {
-                if entry.id == id {
-                    store.data.remove(key);
+                match entry {
+                    Entry::String(entry) => {
+                        if entry.id == id {
+                            store.data.remove(key);
+                        }
+                    }
+                    // If the entry is a stream, it does not have an expiry
+                    Entry::Stream(_) => {}
                 }
             }
 
