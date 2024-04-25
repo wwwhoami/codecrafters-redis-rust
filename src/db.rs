@@ -209,7 +209,13 @@ impl Db {
                 (timestamp, 0)
             }
             XAddId::AutoSeq(timestamp) => {
-                let seq = stream.entries.len();
+                let seq = stream
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.id.0 == timestamp)
+                    .count();
+                let seq = if timestamp == 0 { seq + 1 } else { seq };
+
                 (timestamp, seq)
             }
             XAddId::Explicit(id) => {
