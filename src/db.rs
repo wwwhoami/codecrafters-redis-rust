@@ -36,13 +36,13 @@ impl Stream {
 
 #[derive(Debug)]
 struct StreamEntry {
-    id: (u64, usize),
+    id: (u128, usize),
     #[allow(unused)]
     key_value: Vec<(String, Bytes)>,
 }
 
 impl StreamEntry {
-    pub fn new(id: (u64, usize), key_value: Vec<(String, Bytes)>) -> Self {
+    pub fn new(id: (u128, usize), key_value: Vec<(String, Bytes)>) -> Self {
         Self { id, key_value }
     }
 }
@@ -203,10 +203,15 @@ impl Db {
         let id = match id {
             XAddId::Auto => {
                 let timestamp = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                (timestamp, 0)
+                    .duration_since(SystemTime::UNIX_EPOCH)?
+                    .as_millis();
+                let id = stream
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.id.0 == timestamp)
+                    .count();
+
+                (timestamp, id)
             }
             XAddId::AutoSeq(timestamp) => {
                 let seq = stream
@@ -233,6 +238,7 @@ impl Db {
                 if seq <= last_seq {
                     return Err("Sequence is less than the last sequence or equal to it".into());
                 }
+
                 id
             }
         };

@@ -14,8 +14,8 @@ pub struct XAdd {
 #[derive(Debug, Clone, Copy)]
 pub enum XAddId {
     Auto,
-    AutoSeq(u64),
-    Explicit((u64, usize)),
+    AutoSeq(u128),
+    Explicit((u128, usize)),
 }
 
 impl XAdd {
