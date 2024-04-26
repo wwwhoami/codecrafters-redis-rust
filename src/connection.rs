@@ -12,6 +12,7 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
+use async_recursion::async_recursion;
 use bytes::{Buf, Bytes, BytesMut};
 
 use crate::frame::Error as FrameError;
@@ -227,6 +228,7 @@ impl ConnectionWriterActor {
         self.stream.flush().await
     }
 
+    #[async_recursion]
     async fn write_value(&mut self, frame: &Frame) -> io::Result<()> {
         match frame {
             Frame::Simple(val) => self.write_simple_string(val).await?,
@@ -264,7 +266,14 @@ impl ConnectionWriterActor {
                 self.write_rdb(bytes).await?;
             }
             Frame::NoSend => {}
-            Frame::Array(_val) => unreachable!(),
+            Frame::Array(val) => {
+                self.stream.write_u8(b'*').await?;
+                self.write_decimal(val.len() as u64).await?;
+
+                for entry in val {
+                    self.write_value(entry).await?;
+                }
+            }
         }
 
         Ok(())

@@ -58,18 +58,40 @@ impl StringEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd)]
+pub struct StreamEntryId(u128, usize);
+
+impl StreamEntryId {
+    pub fn new(timestamp: u128, sequence: usize) -> Self {
+        Self(timestamp, sequence)
+    }
+}
+
+impl ToString for StreamEntryId {
+    fn to_string(&self) -> String {
+        format!("{}-{}", self.0, self.1)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StreamEntry {
     /// Unique identifier for the entry
-    id: (u128, usize),
+    id: StreamEntryId,
     /// Key-value pairs for the entry
-    #[allow(unused)]
     key_value: Vec<(String, Bytes)>,
 }
 
 impl StreamEntry {
-    pub fn new(id: (u128, usize), key_value: Vec<(String, Bytes)>) -> Self {
+    pub fn new(id: StreamEntryId, key_value: Vec<(String, Bytes)>) -> Self {
         Self { id, key_value }
+    }
+
+    pub fn id(&self) -> StreamEntryId {
+        self.id
+    }
+
+    pub fn key_value(&self) -> &[(String, Bytes)] {
+        &self.key_value
     }
 }
 
@@ -233,7 +255,7 @@ impl Db {
                     .filter(|entry| entry.id.0 == timestamp)
                     .count();
 
-                (timestamp, id)
+                StreamEntryId(timestamp, id)
             }
             XAddId::AutoSeq(timestamp) => {
                 let seq = stream
@@ -242,12 +264,15 @@ impl Db {
                     .count();
                 let seq = if timestamp == 0 { seq + 1 } else { seq };
 
-                (timestamp, seq)
+                StreamEntryId(timestamp, seq)
             }
             XAddId::Explicit(id) => {
-                let (timestamp, seq) = id;
-                let last_id = stream.last().map(|entry| entry.id).unwrap_or((0, 0));
-                let (last_timestamp, last_seq) = last_id;
+                let StreamEntryId(timestamp, seq) = id;
+                let last_id = stream
+                    .last()
+                    .map(|entry| entry.id)
+                    .unwrap_or(StreamEntryId(0, 0));
+                let StreamEntryId(last_timestamp, last_seq) = last_id;
 
                 if timestamp < last_timestamp {
                     return Err("Timestamp is less than the last timestamp".into());
@@ -265,6 +290,27 @@ impl Db {
         stream.push(entry);
 
         Ok(format!("{}-{}", id.0, id.1))
+    }
+
+    pub fn xrange(
+        &self,
+        stream_key: &str,
+        start: StreamEntryId,
+        end: StreamEntryId,
+    ) -> Vec<StreamEntry> {
+        let store = self.shared.store.lock().unwrap();
+        let stream = store.data.get(stream_key);
+
+        let stream = match stream {
+            Some(Entry::Stream(stream)) => stream,
+            _ => return Vec::new(),
+        };
+
+        stream
+            .iter()
+            .filter(|entry| entry.id >= start && entry.id <= end)
+            .cloned()
+            .collect()
     }
 
     pub fn get_type(&self, key: &str) -> String {

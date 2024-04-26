@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-use crate::{connection::Connection, Db, Frame, Info, Parse};
+use crate::{connection::Connection, db::StreamEntryId, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
 
@@ -15,7 +15,7 @@ pub struct XAdd {
 pub enum XAddId {
     Auto,
     AutoSeq(u128),
-    Explicit((u128, usize)),
+    Explicit(StreamEntryId),
 }
 
 impl XAdd {
@@ -71,7 +71,7 @@ impl XAdd {
         if (timestamp, idx) == (0, 0) {
             Err("ERR The ID specified in XADD must be greater than 0-0".into())
         } else {
-            Ok(XAddId::Explicit((timestamp, idx)))
+            Ok(XAddId::Explicit(StreamEntryId::new(timestamp, idx)))
         }
     }
 

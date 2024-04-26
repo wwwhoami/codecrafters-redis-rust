@@ -37,6 +37,9 @@ mod xadd;
 use xadd::XAdd;
 pub use xadd::XAddId;
 
+mod xrange;
+pub use xrange::XRange;
+
 #[derive(Debug)]
 pub struct Command;
 
@@ -63,6 +66,7 @@ impl Command {
                 "CONFIG" => Box::new(Config::parse_frames(&mut frames)?),
                 "TYPE" => Box::new(Type::parse_frames(&mut frames)?),
                 "XADD" => Box::new(XAdd::parse_frames(&mut frames)?),
+                "XRANGE" => Box::new(XRange::parse_frames(&mut frames)?),
                 cmd => return Err(format!("Protocol error: unknown command {:?}", cmd).into()),
             };
 
