@@ -5,12 +5,16 @@ use super::CommandTrait;
 #[derive(Debug)]
 pub struct XRange {
     stream_key: String,
-    start: StreamEntryId,
-    end: StreamEntryId,
+    start: Option<StreamEntryId>,
+    end: Option<StreamEntryId>,
 }
 
 impl XRange {
-    pub fn new(stream_key: String, start: StreamEntryId, end: StreamEntryId) -> XRange {
+    pub fn new(
+        stream_key: String,
+        start: Option<StreamEntryId>,
+        end: Option<StreamEntryId>,
+    ) -> XRange {
         XRange {
             stream_key,
             start,
@@ -52,12 +56,16 @@ impl XRange {
         Ok(XRange::new(stream_key, start, end))
     }
 
-    pub fn parse_id(id: &str) -> crate::Result<StreamEntryId> {
+    pub fn parse_id(id: &str) -> crate::Result<Option<StreamEntryId>> {
+        if id == "-" {
+            return Ok(None);
+        }
+
         let split_id = id.split('-').collect::<Vec<&str>>();
         let timestamp = split_id[0].parse::<u128>()?;
         let sequence = split_id[1].parse::<usize>()?;
 
-        Ok(StreamEntryId::new(timestamp, sequence))
+        Ok(Some(StreamEntryId::new(timestamp, sequence)))
     }
 
     pub fn to_frame(&self) -> Frame {

@@ -295,8 +295,8 @@ impl Db {
     pub fn xrange(
         &self,
         stream_key: &str,
-        start: StreamEntryId,
-        end: StreamEntryId,
+        start: Option<StreamEntryId>,
+        end: Option<StreamEntryId>,
     ) -> Vec<StreamEntry> {
         let store = self.shared.store.lock().unwrap();
         let stream = store.data.get(stream_key);
@@ -305,6 +305,9 @@ impl Db {
             Some(Entry::Stream(stream)) => stream,
             _ => return Vec::new(),
         };
+
+        let start = start.unwrap_or(StreamEntryId(0, 0));
+        let end = end.unwrap_or(StreamEntryId(u128::MAX, usize::MAX));
 
         stream
             .iter()
