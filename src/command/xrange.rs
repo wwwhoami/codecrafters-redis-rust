@@ -50,22 +50,26 @@ impl XRange {
         let stream_key = frames.next_string()?;
         let start = frames.next_string()?;
         let end = frames.next_string()?;
-        let start = XRange::parse_id(start.as_str())?;
-        let end = XRange::parse_id(end.as_str())?;
+        let start = if start == "-" {
+            None
+        } else {
+            Some(XRange::parse_id(start.as_str())?)
+        };
+        let end = if end == "+" {
+            None
+        } else {
+            Some(XRange::parse_id(end.as_str())?)
+        };
 
         Ok(XRange::new(stream_key, start, end))
     }
 
-    pub fn parse_id(id: &str) -> crate::Result<Option<StreamEntryId>> {
-        if id == "-" {
-            return Ok(None);
-        }
-
+    pub fn parse_id(id: &str) -> crate::Result<StreamEntryId> {
         let split_id = id.split('-').collect::<Vec<&str>>();
         let timestamp = split_id[0].parse::<u128>()?;
         let sequence = split_id[1].parse::<usize>()?;
 
-        Ok(Some(StreamEntryId::new(timestamp, sequence)))
+        Ok(StreamEntryId::new(timestamp, sequence))
     }
 
     pub fn to_frame(&self) -> Frame {
