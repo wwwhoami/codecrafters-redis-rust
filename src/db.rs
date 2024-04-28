@@ -316,6 +316,35 @@ impl Db {
             .collect()
     }
 
+    pub fn xread(
+        &self,
+        stream_keys: &[String],
+        stream_ids: &[StreamEntryId],
+    ) -> Vec<(String, Vec<StreamEntry>)> {
+        let store = self.shared.store.lock().unwrap();
+
+        stream_keys
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, key)| {
+                store.data.get(key).and_then(|entry| match entry {
+                    Entry::Stream(stream) => {
+                        let entries = stream
+                            .iter()
+                            .filter(|entry| {
+                                let id = stream_ids.get(idx).unwrap_or(&StreamEntryId(0, 0));
+                                entry.id > *id
+                            })
+                            .cloned()
+                            .collect();
+                        Some((key.clone(), entries))
+                    }
+                    _ => None,
+                })
+            })
+            .collect()
+    }
+
     pub fn get_type(&self, key: &str) -> String {
         let store = self.shared.store.lock().unwrap();
 

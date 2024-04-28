@@ -1,11 +1,11 @@
-use std::{fmt, str, vec};
+use std::{fmt, iter, str, vec};
 
 use bytes::Bytes;
 
 use crate::frame::Frame;
 
 pub struct Parse {
-    frame_iter: vec::IntoIter<Frame>,
+    frame_iter: iter::Peekable<vec::IntoIter<Frame>>,
     bytes_read: usize,
 }
 
@@ -23,13 +23,17 @@ impl Parse {
         };
 
         Ok(Parse {
-            frame_iter: frames.into_iter(),
+            frame_iter: frames.into_iter().peekable(),
             bytes_read: 0,
         })
     }
 
     fn next_frame(&mut self) -> Result<Frame, Error> {
         self.frame_iter.next().ok_or(Error::EndOfStream)
+    }
+
+    fn peek_frame(&mut self) -> Option<&Frame> {
+        self.frame_iter.peek()
     }
 
     pub fn next_string(&mut self) -> Result<String, Error> {
@@ -50,6 +54,15 @@ impl Parse {
             )
             .into()),
         }
+    }
+
+    /// Peek the next frame and return it as a string
+    pub fn peek_string(&mut self) -> Option<String> {
+        self.peek_frame().and_then(|frame| match frame {
+            Frame::Simple(s) => Some(s.clone()),
+            Frame::Bulk(s) => str::from_utf8(s).map(|s| s.to_string()).ok(),
+            _ => None,
+        })
     }
 
     pub fn next_bytes(&mut self) -> Result<Bytes, Error> {
