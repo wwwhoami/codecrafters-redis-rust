@@ -1,3 +1,5 @@
+use std::str;
+
 use async_trait::async_trait;
 
 use crate::{
@@ -9,18 +11,36 @@ use crate::{
 use super::CommandTrait;
 
 #[derive(Debug)]
+pub enum StartIds {
+    Explicit(Vec<StreamEntryId>),
+    Min,
+}
+
+impl ToString for StartIds {
+    fn to_string(&self) -> String {
+        match self {
+            StartIds::Explicit(ids) => {
+                let mut ids_str = String::new();
+                for id in ids {
+                    ids_str.push_str(&id.to_string());
+                    ids_str.push(' ');
+                }
+                ids_str
+            }
+            StartIds::Min => "$".to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct XRead {
     stream_keys: Vec<String>,
-    start_ids: Vec<StreamEntryId>,
+    start_ids: StartIds,
     block: Option<u64>,
 }
 
 impl XRead {
-    pub fn new(
-        stream_keys: Vec<String>,
-        start_ids: Vec<StreamEntryId>,
-        block: Option<u64>,
-    ) -> XRead {
+    pub fn new(stream_keys: Vec<String>, start_ids: StartIds, block: Option<u64>) -> XRead {
         XRead {
             stream_keys,
             start_ids,
@@ -29,9 +49,11 @@ impl XRead {
     }
 
     pub async fn execute(&self, db: &Db) -> Frame {
-        let streams = db
-            .xread(&self.stream_keys, &self.start_ids, self.block)
-            .await;
+        let stream_ids = match &self.start_ids {
+            StartIds::Explicit(ids) => ids.clone(),
+            StartIds::Min => db.get_streams_last_ids(&self.stream_keys),
+        };
+        let streams = db.xread(&self.stream_keys, &stream_ids, self.block).await;
 
         if streams.is_empty() {
             return Frame::Null;
@@ -90,25 +112,36 @@ impl XRead {
         }
     }
 
-    pub fn parse_streams(frames: &mut Parse, block: Option<u64>) -> crate::Result<XRead> {
+    fn parse_streams(frames: &mut Parse, block: Option<u64>) -> crate::Result<XRead> {
         let stream_keys = Self::parse_keys(frames)?;
-        let stream_ids = Self::parse_ids(frames)?;
+        let start_ids = Self::parse_start_ids(frames)?;
 
-        if stream_keys.len() != stream_ids.len() {
-            return Err(
-                "Protocol error: STREAMS command should have same keys and ids counts".into(),
-            );
+        // Validate the start ids if explicit
+        if let StartIds::Explicit(ids) = &start_ids {
+            if ids.is_empty() {
+                return Err(
+                    "Protocol error: ids section in STREAMS command should not be empty".into(),
+                );
+            }
+            if stream_keys.len() != ids.len() {
+                return Err(
+                    "Protocol error: STREAMS command should have same keys and ids counts".into(),
+                );
+            }
         }
 
-        Ok(XRead::new(stream_keys, stream_ids, block))
+        Ok(XRead::new(stream_keys, start_ids, block))
     }
 
-    pub fn parse_keys(frames: &mut Parse) -> crate::Result<Vec<String>> {
+    fn parse_keys(frames: &mut Parse) -> crate::Result<Vec<String>> {
         let mut keys = Vec::new();
 
         while let Some(key) = frames.peek_string() {
             // If the key is a valid stream id, then we have reached the end of the keys
             if Self::parse_id(&key).is_ok() {
+                break;
+            } else if key == "$" {
+                // If the key is "$", then we have reached the end of the keys
                 break;
             }
             // Otherwise, add the key to the list of keys and proceed frames iterator
@@ -116,6 +149,18 @@ impl XRead {
         }
 
         Ok(keys)
+    }
+
+    fn parse_start_ids(frames: &mut Parse) -> crate::Result<StartIds> {
+        match frames.peek_string() {
+            Some(str) if str == "$" => {
+                // Consume the "$" string
+                frames.next_string()?;
+                Ok(StartIds::Min)
+            }
+            Some(_) => Ok(StartIds::Explicit(Self::parse_ids(frames)?)),
+            _ => Err("Protocol error: missing ids section in STREAMS command".into()),
+        }
     }
 
     pub fn parse_ids(frames: &mut Parse) -> crate::Result<Vec<StreamEntryId>> {
@@ -128,7 +173,7 @@ impl XRead {
         Ok(ids)
     }
 
-    pub fn parse_id(id: &str) -> crate::Result<StreamEntryId> {
+    fn parse_id(id: &str) -> crate::Result<StreamEntryId> {
         let split_id = id.split('-').collect::<Vec<&str>>();
         let timestamp = split_id[0].parse::<u128>()?;
         let sequence = split_id[1].parse::<usize>()?;
@@ -150,9 +195,7 @@ impl XRead {
             frames.push(Frame::Bulk(key.clone().into()));
         }
 
-        for id in &self.start_ids {
-            frames.push(Frame::Bulk(id.to_string().into()));
-        }
+        frames.push(Frame::Bulk(self.start_ids.to_string().into()));
 
         Frame::Array(frames)
     }
@@ -160,8 +203,8 @@ impl XRead {
 
 #[async_trait]
 impl CommandTrait for XRead {
-    fn parse_frames(&self, _frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
-        Ok(Box::new(XRead::parse_frames(_frames)?))
+    fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
+        Ok(Box::new(XRead::parse_frames(frames)?))
     }
 
     async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {

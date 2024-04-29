@@ -92,7 +92,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn subscribe(&mut self) -> broadcast::Receiver<StreamEntryId> {
+    fn subscribe(&mut self) -> broadcast::Receiver<StreamEntryId> {
         match &self.update_sender {
             Some(sender) => sender.subscribe(),
             None => {
@@ -103,10 +103,17 @@ impl Stream {
         }
     }
 
-    pub fn send_update(&self, id: StreamEntryId) {
+    fn send_update(&self, id: StreamEntryId) {
         if let Some(sender) = &self.update_sender {
             let _ = sender.send(id).unwrap();
         }
+    }
+
+    fn get_last_id(&self) -> StreamEntryId {
+        self.entries
+            .last()
+            .map(|entry| entry.id)
+            .unwrap_or(StreamEntryId(0, 0))
     }
 }
 
@@ -422,6 +429,29 @@ impl Db {
                         Some((key.clone(), entries))
                     }
                     _ => None,
+                })
+            })
+            .collect()
+    }
+
+    pub fn get_stream_last_id(&self, key: &str) -> StreamEntryId {
+        let store = self.shared.store.lock().unwrap();
+        let stream = store.data.get(key);
+
+        match stream {
+            Some(Entry::Stream(stream)) => stream.get_last_id(),
+            _ => StreamEntryId(0, 0),
+        }
+    }
+
+    pub fn get_streams_last_ids(&self, keys: &[String]) -> Vec<StreamEntryId> {
+        let store = self.shared.store.lock().unwrap();
+
+        keys.iter()
+            .filter_map(|key| {
+                store.data.get(key).map(|entry| match entry {
+                    Entry::Stream(stream) => stream.get_last_id(),
+                    _ => StreamEntryId(0, 0),
                 })
             })
             .collect()
