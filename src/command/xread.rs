@@ -137,11 +137,9 @@ impl XRead {
         let mut keys = Vec::new();
 
         while let Some(key) = frames.peek_string() {
-            // If the key is a valid stream id, then we have reached the end of the keys
-            if Self::parse_id(&key).is_ok() {
-                break;
-            } else if key == "$" {
-                // If the key is "$", then we have reached the end of the keys
+            // If the key is a valid stream id or if the key is "$",
+            // then we have reached the end of the keys
+            if Self::parse_id(&key).is_ok() || key == "$" {
                 break;
             }
             // Otherwise, add the key to the list of keys and proceed frames iterator
