@@ -57,20 +57,12 @@ impl ConnectionReaderActor {
         while let Some(message) = self.receiver.recv().await {
             match message {
                 ConnectionMessage::ReadFrame(sender) => {
-                    println!("{:?}: Reading frame", self.id);
-
                     let frame = self.read_frame().await;
                     let _ = sender.send(frame);
-
-                    println!("{:?}: Frame read", self.id)
                 }
                 ConnectionMessage::ReadRdb(sender) => {
-                    println!("{:?}: Reading RDB", self.id);
-
                     let frame = self.read_rdb().await;
                     let _ = sender.send(frame);
-
-                    println!("{:?}: RDB read", self.id)
                 }
                 _ => (),
             }
@@ -195,16 +187,12 @@ impl ConnectionWriterActor {
     pub async fn run(mut self) -> crate::Result<()> {
         while let Some(message) = self.receiver.recv().await {
             if let ConnectionMessage::WriteFrame(frame, sender) = message {
-                println!("{:?}: Writing frame", self.id);
-
                 let result = self
                     .write_frame(&frame)
                     .await
                     .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync + 'static>);
 
                 let _ = sender.send(result);
-
-                println!("{:?}: Frame written", self.id)
             }
         }
 

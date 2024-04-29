@@ -231,11 +231,6 @@ impl Master {
 
         let target_count = target_count.min(replicas_count);
 
-        println!("Target count: {}", target_count);
-        println!("Replicas count: {}", replicas_count);
-        println!("Master offset: {}", master_offset);
-        println!("Timeout: {:?}", timeout);
-
         // Master has not written any commands
         // So all replicas are synced with the master
         if master_offset == 0 {

@@ -29,11 +29,6 @@ impl XRead {
     }
 
     pub async fn execute(&self, db: &Db) -> Frame {
-        println!("XRead execute");
-        println!("stream_keys: {:?}", self.stream_keys);
-        println!("start_ids: {:?}", self.start_ids);
-        println!("block: {:?}", self.block);
-
         let streams = db
             .xread(&self.stream_keys, &self.start_ids, self.block)
             .await;
