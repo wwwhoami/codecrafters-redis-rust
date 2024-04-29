@@ -1,5 +1,6 @@
 use std::vec;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 
 use crate::{connection::Connection, parse, Db, Frame, Info, Parse};
@@ -146,12 +147,13 @@ impl ReplConf {
     }
 }
 
+#[async_trait]
 impl CommandTrait for ReplConf {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(ReplConf::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &mut Info, connection: Connection) -> Frame {
+    async fn execute(&self, _db: &Db, server_info: &mut Info, connection: Connection) -> Frame {
         self.execute(server_info, connection)
     }
 

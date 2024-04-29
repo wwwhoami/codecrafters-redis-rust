@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::{connection::Connection, parse::Error, Db, Frame, Info as ServerInfo, Parse};
 
 use super::CommandTrait;
@@ -26,12 +28,18 @@ impl Info {
     }
 }
 
+#[async_trait]
 impl CommandTrait for Info {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(Info::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &mut ServerInfo, _connection: Connection) -> Frame {
+    async fn execute(
+        &self,
+        _db: &Db,
+        server_info: &mut ServerInfo,
+        _connection: Connection,
+    ) -> Frame {
         self.execute(server_info)
     }
 

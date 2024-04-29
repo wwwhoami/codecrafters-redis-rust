@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use async_trait::async_trait;
+
 use crate::{connection::Connection, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
@@ -34,12 +36,13 @@ impl Wait {
     }
 }
 
+#[async_trait]
 impl CommandTrait for Wait {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(Wait::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &mut Info, _connection: Connection) -> Frame {
+    async fn execute(&self, _db: &Db, server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute(server_info)
     }
 

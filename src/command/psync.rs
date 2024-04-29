@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::{connection::Connection, replicaiton::rdb, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
@@ -50,12 +52,13 @@ impl Psync {
     }
 }
 
+#[async_trait]
 impl CommandTrait for Psync {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(Psync::parse_frames(frames)?))
     }
 
-    fn execute(&self, _db: &Db, server_info: &mut Info, _connection: Connection) -> Frame {
+    async fn execute(&self, _db: &Db, server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute(server_info)
     }
 

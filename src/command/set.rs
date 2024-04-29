@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 
 use crate::{connection::Connection, db::Db, parse, Frame, Info, Parse};
@@ -67,12 +68,13 @@ impl Set {
     }
 }
 
+#[async_trait]
 impl CommandTrait for Set {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(Set::parse_frames(frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
+    async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute(db)
     }
 

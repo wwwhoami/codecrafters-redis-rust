@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use bytes::Bytes;
 
 use crate::{connection::Connection, db::StreamEntryId, Db, Frame, Info, Parse};
@@ -27,15 +28,20 @@ impl XAdd {
         }
     }
 
-    pub fn execute(&self, db: &Db) -> Frame {
-        let id = db.xadd(self.stream_key.clone(), self.id, self.key_value.clone());
+    pub async fn execute(&self, db: &Db) -> Frame {
+        let id = db
+            .xadd(self.stream_key.clone(), self.id, self.key_value.clone())
+            .await;
 
         match id {
             Ok(id) => Frame::Bulk(id.into()),
-            Err(_) => Frame::Error(
+            Err(err) => {
+                eprintln!("XAdd error: {:?}", err);
+                Frame::Error(
                 "ERR The ID specified in XADD is equal or smaller than the target stream top item"
                     .into(),
-            ),
+            )
+            }
         }
     }
 
@@ -76,17 +82,36 @@ impl XAdd {
     }
 
     pub fn to_frame(&self) -> Frame {
-        Frame::Array(vec![Frame::Bulk("PING".into())])
+        let mut frames = vec![
+            Frame::Bulk("XADD".into()),
+            Frame::Bulk(self.stream_key.clone().into()),
+        ];
+
+        match self.id {
+            XAddId::Auto => frames.push(Frame::Bulk("*".into())),
+            XAddId::AutoSeq(timestamp) => {
+                frames.push(Frame::Bulk(format!("{}-*", timestamp).into()))
+            }
+            XAddId::Explicit(id) => frames.push(Frame::Bulk(id.to_string().into())),
+        }
+
+        for (key, value) in &self.key_value {
+            frames.push(Frame::Bulk(key.clone().into()));
+            frames.push(Frame::Bulk(value.clone()));
+        }
+
+        Frame::Array(frames)
     }
 }
 
+#[async_trait]
 impl CommandTrait for XAdd {
     fn parse_frames(&self, _frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(XAdd::parse_frames(_frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
-        self.execute(db)
+    async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
+        self.execute(db).await
     }
 
     fn execute_replica(&self, _db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {

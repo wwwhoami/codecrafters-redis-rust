@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use bytes::Bytes;
 
 use crate::{connection::Connection, Db, Frame, Info, Parse};
@@ -31,12 +32,13 @@ impl Keys {
     }
 }
 
+#[async_trait]
 impl CommandTrait for Keys {
     fn parse_frames(&self, frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(Keys::parse_frames(frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
+    async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute(db)
     }
 

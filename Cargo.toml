@@ -25,3 +25,4 @@ thiserror = "1.0.32"                                # error handling
 tokio = { version = "1.23.0", features = ["full"] } # async networking
 base64 = "0.22.0"                                   # base64 encoding/decoding
 async-recursion = "1.1.1"
+async-trait = "0.1.80"

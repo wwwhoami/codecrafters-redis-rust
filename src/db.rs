@@ -5,7 +5,11 @@ use std::{
 };
 
 use bytes::Bytes;
-use tokio::{sync::Notify, time::Instant};
+use tokio::{
+    sync::{broadcast, Notify},
+    task::JoinSet,
+    time::Instant,
+};
 
 use crate::command::XAddId;
 
@@ -37,7 +41,7 @@ pub enum Entry {
     /// Entry for a string value
     String(StringEntry),
     /// Entry for a stream value
-    Stream(Vec<StreamEntry>),
+    Stream(Stream),
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +83,31 @@ pub struct StreamEntry {
     id: StreamEntryId,
     /// Key-value pairs for the entry
     key_value: Vec<(String, Bytes)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Stream {
+    update_sender: Option<broadcast::Sender<StreamEntryId>>,
+    entries: Vec<StreamEntry>,
+}
+
+impl Stream {
+    pub fn subscribe(&mut self) -> broadcast::Receiver<StreamEntryId> {
+        match &self.update_sender {
+            Some(sender) => sender.subscribe(),
+            None => {
+                let (sender, receiver) = broadcast::channel(1);
+                self.update_sender = Some(sender);
+                receiver
+            }
+        }
+    }
+
+    pub fn send_update(&self, id: StreamEntryId) {
+        if let Some(sender) = &self.update_sender {
+            let _ = sender.send(id).unwrap();
+        }
+    }
 }
 
 impl StreamEntry {
@@ -228,17 +257,21 @@ impl Db {
         }
     }
 
-    pub fn xadd(
+    pub async fn xadd(
         &self,
         stream_key: String,
         id: XAddId,
         key_value: Vec<(String, Bytes)>,
     ) -> crate::Result<String> {
         let mut store = self.shared.store.lock().unwrap();
-        let stream = store
-            .data
-            .entry(stream_key.clone())
-            .or_insert_with(|| Entry::Stream(Vec::new()));
+        let stream = store.data.entry(stream_key).or_insert_with(|| {
+            Entry::Stream({
+                Stream {
+                    update_sender: None,
+                    entries: Vec::new(),
+                }
+            })
+        });
 
         let stream = match stream {
             Entry::Stream(stream) => stream,
@@ -251,6 +284,7 @@ impl Db {
                     .duration_since(SystemTime::UNIX_EPOCH)?
                     .as_millis();
                 let id = stream
+                    .entries
                     .iter()
                     .filter(|entry| entry.id.0 == timestamp)
                     .count();
@@ -259,6 +293,7 @@ impl Db {
             }
             XAddId::AutoSeq(timestamp) => {
                 let seq = stream
+                    .entries
                     .iter()
                     .filter(|entry| entry.id.0 == timestamp)
                     .count();
@@ -269,6 +304,7 @@ impl Db {
             XAddId::Explicit(id) => {
                 let StreamEntryId(timestamp, seq) = id;
                 let last_id = stream
+                    .entries
                     .last()
                     .map(|entry| entry.id)
                     .unwrap_or(StreamEntryId(0, 0));
@@ -287,7 +323,8 @@ impl Db {
 
         let entry = StreamEntry::new(id, key_value);
 
-        stream.push(entry);
+        stream.entries.push(entry);
+        stream.send_update(id);
 
         Ok(format!("{}-{}", id.0, id.1))
     }
@@ -310,19 +347,63 @@ impl Db {
         let end = end.unwrap_or(StreamEntryId(u128::MAX, usize::MAX));
 
         stream
+            .entries
             .iter()
             .filter(|entry| entry.id >= start && entry.id <= end)
             .cloned()
             .collect()
     }
 
-    pub fn xread(
+    pub async fn xread(
         &self,
         stream_keys: &[String],
         stream_ids: &[StreamEntryId],
+        block: Option<u64>,
     ) -> Vec<(String, Vec<StreamEntry>)> {
+        if let Some(block_timeout) = block {
+            let mut join_set = JoinSet::new();
+
+            // For each stream key, spawn a task that will wait until the stream updates
+            for (idx, stream_key) in stream_keys.iter().enumerate() {
+                let mut store = self.shared.store.lock().unwrap();
+
+                let stream = store.data.entry(stream_key.to_string()).or_insert_with(|| {
+                    Entry::Stream({
+                        Stream {
+                            update_sender: None,
+                            entries: Vec::new(),
+                        }
+                    })
+                });
+
+                let stream = match stream {
+                    Entry::Stream(stream) => stream,
+                    _ => continue,
+                };
+
+                let mut receiver = stream.subscribe();
+                let stream_target_id = stream_ids.get(idx).cloned().unwrap_or(StreamEntryId(0, 0));
+                join_set.spawn(async move {
+                    // Wait until the stream updates with an entry
+                    // with id greater than the target stream id
+                    while receiver.recv().await.unwrap() <= stream_target_id {}
+                });
+            }
+
+            // If a block timeout is set, spawn a task that will sleep for the duration
+            if block_timeout > 0 {
+                let sleep = tokio::time::sleep(Duration::from_millis(block_timeout));
+                join_set.spawn(sleep);
+            }
+
+            // Wait until any task completes
+            let _ = join_set.join_next().await.expect("JoinSet is empty");
+        }
+
         let store = self.shared.store.lock().unwrap();
 
+        // Collect all the entries for each stream key
+        // that have an id greater than the target stream id
         stream_keys
             .iter()
             .enumerate()
@@ -330,6 +411,7 @@ impl Db {
                 store.data.get(key).and_then(|entry| match entry {
                     Entry::Stream(stream) => {
                         let entries = stream
+                            .entries
                             .iter()
                             .filter(|entry| {
                                 let id = stream_ids.get(idx).unwrap_or(&StreamEntryId(0, 0));

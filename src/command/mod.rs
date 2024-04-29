@@ -1,6 +1,7 @@
 use crate::{connection::Connection, frame::Frame, parse::Parse, Db, Info as ServerInfo};
 
 mod echo;
+use async_trait::async_trait;
 use echo::Echo;
 
 mod ping;
@@ -121,26 +122,22 @@ impl Command {
         connection: Connection,
     ) -> (Frame, usize) {
         match Command::from_frame(frame) {
-            Ok(command) => {
-                match command.as_any().downcast_ref::<Wait>() {
-                    Some(wait_command) => {
-                        // let mut parse_frame = Parse::new(frame.clone()).unwrap();
-                        // let command = command.parse_frames(&mut parse_frame).unwrap();
-                        let count = server_info
-                            .count_sync_repl(wait_command.replica_count, wait_command.timeout)
-                            .await;
+            Ok(command) => match command.as_any().downcast_ref::<Wait>() {
+                Some(wait_command) => {
+                    let count = server_info
+                        .count_sync_repl(wait_command.replica_count, wait_command.timeout)
+                        .await;
 
-                        (
-                            Frame::Integer(count),
-                            command.to_frame().encode().bytes().len(),
-                        )
-                    }
-                    None => (
-                        command.execute(db, server_info, connection),
+                    (
+                        Frame::Integer(count),
                         command.to_frame().encode().bytes().len(),
-                    ),
+                    )
                 }
-            }
+                None => (
+                    command.execute(db, server_info, connection).await,
+                    command.to_frame().encode().bytes().len(),
+                ),
+            },
             Err(err) => (Frame::Error(err.to_string()), 0),
         }
     }
@@ -185,6 +182,7 @@ impl Command {
     }
 }
 
+#[async_trait]
 pub trait CommandTrait {
     /// Parse the frames into a command
     ///
@@ -195,7 +193,8 @@ pub trait CommandTrait {
 
     /// Execute the command
     /// Returns the result as a Frame
-    fn execute(&self, db: &Db, server_info: &mut ServerInfo, connection: Connection) -> Frame;
+    async fn execute(&self, db: &Db, server_info: &mut ServerInfo, connection: Connection)
+        -> Frame;
 
     fn execute_replica(
         &self,

@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::{connection::Connection, db::StreamEntryId, Db, Frame, Info, Parse};
 
 use super::CommandTrait;
@@ -73,16 +75,32 @@ impl XRange {
     }
 
     pub fn to_frame(&self) -> Frame {
-        Frame::Array(vec![Frame::Bulk("PING".into())])
+        let mut frames = vec![Frame::Bulk("XRANGE".into())];
+        frames.push(Frame::Bulk(self.stream_key.clone().into()));
+
+        if let Some(start) = &self.start {
+            frames.push(Frame::Bulk(start.to_string().into()));
+        } else {
+            frames.push(Frame::Bulk("-".into()));
+        }
+
+        if let Some(end) = &self.end {
+            frames.push(Frame::Bulk(end.to_string().into()));
+        } else {
+            frames.push(Frame::Bulk("+".into()));
+        }
+
+        Frame::Array(frames)
     }
 }
 
+#[async_trait]
 impl CommandTrait for XRange {
     fn parse_frames(&self, _frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(XRange::parse_frames(_frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
+    async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
         self.execute(db)
     }
 

@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::{
     connection::Connection,
     db::{StreamEntry, StreamEntryId},
@@ -10,22 +12,35 @@ use super::CommandTrait;
 pub struct XRead {
     stream_keys: Vec<String>,
     start_ids: Vec<StreamEntryId>,
+    block: Option<u64>,
 }
 
 impl XRead {
-    pub fn new(stream_keys: Vec<String>, start_ids: Vec<StreamEntryId>) -> XRead {
+    pub fn new(
+        stream_keys: Vec<String>,
+        start_ids: Vec<StreamEntryId>,
+        block: Option<u64>,
+    ) -> XRead {
         XRead {
             stream_keys,
             start_ids,
+            block,
         }
     }
 
-    pub fn execute(&self, db: &Db) -> Frame {
+    pub async fn execute(&self, db: &Db) -> Frame {
         println!("XRead execute");
         println!("stream_keys: {:?}", self.stream_keys);
         println!("start_ids: {:?}", self.start_ids);
+        println!("block: {:?}", self.block);
 
-        let streams = db.xread(&self.stream_keys, &self.start_ids);
+        let streams = db
+            .xread(&self.stream_keys, &self.start_ids, self.block)
+            .await;
+
+        if streams.is_empty() {
+            return Frame::Null;
+        }
 
         let mut frames = Vec::new();
         for (stream_key, entries) in streams {
@@ -37,28 +52,16 @@ impl XRead {
 
             frames.push(Frame::Array(stream));
         }
-        // for entry in entries {
-        //     let id = entry.id();
-        //     let key_value = entry.key_value();
-        //
-        //     let mut frame = Vec::new();
-        //     frame.push(Frame::Bulk(id.to_string().into()));
-        //
-        //     let mut entry = Vec::new();
-        //     for (key, value) in key_value {
-        //         entry.push(Frame::Bulk(key.clone().into()));
-        //         entry.push(Frame::Bulk(value.clone()));
-        //     }
-        //
-        //     frame.push(Frame::Array(entry));
-        //     frames.push(Frame::Array(frame));
-        // }
 
         Frame::Array(frames)
     }
 
     fn entries_to_frames(entries: Vec<StreamEntry>) -> Frame {
+        if entries.is_empty() {
+            return Frame::Null;
+        }
         let mut frames = Vec::new();
+
         for entry in entries {
             let id = entry.id();
             let key_value = entry.key_value();
@@ -81,12 +84,18 @@ impl XRead {
 
     pub fn parse_frames(frames: &mut Parse) -> crate::Result<XRead> {
         match frames.next_string()?.to_uppercase().as_str() {
-            "STREAMS" => XRead::parse_streams(frames),
+            "BLOCK" => {
+                let block = frames.next_uint()?;
+                // Consume the "STREAMS" string
+                frames.next_string()?;
+                XRead::parse_streams(frames, Some(block))
+            }
+            "STREAMS" => XRead::parse_streams(frames, None),
             _ => Err("Protocol error: unsupported XREAD section".into()),
         }
     }
 
-    pub fn parse_streams(frames: &mut Parse) -> crate::Result<XRead> {
+    pub fn parse_streams(frames: &mut Parse, block: Option<u64>) -> crate::Result<XRead> {
         let stream_keys = Self::parse_keys(frames)?;
         let stream_ids = Self::parse_ids(frames)?;
 
@@ -95,7 +104,8 @@ impl XRead {
                 "Protocol error: STREAMS command should have same keys and ids counts".into(),
             );
         }
-        Ok(XRead::new(stream_keys, stream_ids))
+
+        Ok(XRead::new(stream_keys, stream_ids, block))
     }
 
     pub fn parse_keys(frames: &mut Parse) -> crate::Result<Vec<String>> {
@@ -132,17 +142,35 @@ impl XRead {
     }
 
     pub fn to_frame(&self) -> Frame {
-        Frame::Array(vec![Frame::Bulk("PING".into())])
+        let mut frames = vec![Frame::Bulk("XREAD".into())];
+
+        if let Some(block) = self.block {
+            frames.push(Frame::Bulk("BLOCK".into()));
+            frames.push(Frame::Bulk(block.to_string().into()));
+        }
+
+        frames.push(Frame::Bulk("STREAMS".into()));
+
+        for key in &self.stream_keys {
+            frames.push(Frame::Bulk(key.clone().into()));
+        }
+
+        for id in &self.start_ids {
+            frames.push(Frame::Bulk(id.to_string().into()));
+        }
+
+        Frame::Array(frames)
     }
 }
 
+#[async_trait]
 impl CommandTrait for XRead {
     fn parse_frames(&self, _frames: &mut Parse) -> crate::Result<Box<dyn CommandTrait>> {
         Ok(Box::new(XRead::parse_frames(_frames)?))
     }
 
-    fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
-        self.execute(db)
+    async fn execute(&self, db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
+        self.execute(db).await
     }
 
     fn execute_replica(&self, _db: &Db, _server_info: &mut Info, _connection: Connection) -> Frame {
